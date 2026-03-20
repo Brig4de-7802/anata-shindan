@@ -1110,8 +1110,13 @@ export default function ShindanApp() {
                   <span style={{fontSize:15,fontWeight:800,color:"white"}}>📤 シェアする</span>
                   <button onClick={()=>setShareModal(null)} style={{background:"rgba(255,255,255,0.1)",border:"none",color:"white",width:30,height:30,borderRadius:"50%",cursor:"pointer",fontSize:14}}>✕</button>
                 </div>
-                <div style={{padding:"8px 12px",borderRadius:10,marginBottom:12,fontSize:11,background:shareModal.publicUrl?"rgba(52,211,153,0.15)":"rgba(251,191,36,0.15)",border:`1px solid ${shareModal.publicUrl?"rgba(52,211,153,0.4)":"rgba(251,191,36,0.4)"}`,color:shareModal.publicUrl?"#34d399":"#fbbf24",textAlign:"center"}}>
-                  {shareModal.publicUrl?"✅ 画像のアップロード成功！Xに投稿するとカード画像が表示されます":"⚠️ 画像DL済み。X投稿画面で添付してください"}
+                <div style={{padding:"12px 14px",borderRadius:12,marginBottom:12,fontSize:12,background:"rgba(251,191,36,0.12)",border:"1px solid rgba(251,191,36,0.4)",lineHeight:1.7}}>
+                  <div style={{color:"#fbbf24",fontWeight:700,marginBottom:4}}>📥 画像を自動ダウンロードしました</div>
+                  <div style={{color:"rgba(255,255,255,0.75)",fontSize:11}}>
+                    【PC】投稿ボタンを押した後、X/LINEの画面で<br/>
+                    📎 または「画像を追加」をクリックして添付してください<br/>
+                    <span style={{color:"rgba(255,255,255,0.45)"}}>（ダウンロードフォルダに anata-shindan.png があります）</span>
+                  </div>
                 </div>
                 <div style={{borderRadius:16,overflow:"hidden",marginBottom:14,border:"1px solid rgba(255,255,255,0.1)"}}>
                   <img src={shareModal.dataUrl} alt="preview" style={{width:"100%",display:"block"}}/>
