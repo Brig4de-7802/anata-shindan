@@ -942,12 +942,13 @@ export default function ShindanApp() {
         <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"0 0 4px"}}>〜あなたは何タイプ？〜</p>
         <p style={{fontSize:11.5,color:"rgba(255,255,255,0.35)",maxWidth:270,lineHeight:1.75,marginBottom:28}}>30の質問からAIが初代151匹の中の<br/>あなたに最も近いポケモンを診断します</p>
         <div style={{display:"flex",gap:8,marginBottom:32,flexWrap:"wrap",justifyContent:"center"}}>
-          {["🎮 ポケモンタイプ診断","💘 相性◎×3通り","🌟 2025運勢","💪 才能＆弱点"].map(t=>(
+          {["🎮 ポケモンタイプ診断","💘 相性◎×3通り","🌟 2026運勢","💪 才能＆弱点"].map(t=>(
             <span key={t} style={{padding:"5px 13px",borderRadius:20,fontSize:11,background:"rgba(139,92,246,0.18)",border:"1px solid rgba(139,92,246,0.32)",color:"rgba(255,255,255,0.78)"}}>{t}</span>
           ))}
         </div>
         <button onClick={()=>setScreen("quiz")} style={{padding:"17px 50px",borderRadius:50,fontSize:16,fontWeight:800,cursor:"pointer",border:"none",background:"linear-gradient(135deg,#a855f7,#ec4899)",color:"white",boxShadow:"0 0 36px rgba(168,85,247,0.48)",animation:"pulse 2s ease-in-out infinite",letterSpacing:3}}>診断スタート！</button>
         <p style={{marginTop:14,fontSize:10,color:"rgba(255,255,255,0.2)"}}>全30問 • 所要時間 約3分</p>
+        <p style={{marginTop:10,fontSize:11,color:"rgba(167,139,250,0.45)",letterSpacing:1}}>✨ もしかしたら幻のポケモンに出会えるかも…？</p>
       </div>
     </div>
   );
