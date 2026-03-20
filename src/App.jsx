@@ -721,13 +721,10 @@ export default function ShindanApp() {
 
   const fetchResult = async (ans) => {
     // ── ポケモンIDを決定論的に計算（ゲンガー等禁止）──
-    const BANNED = [6, 25, 94, 149, 150, 151];
     const weights = {A:3, B:7, C:13, D:17};
     let hash = 0;
     ans.forEach((v, i) => { hash += (weights[v]||5) * (i+1) * (i+2); });
-    const available = [];
-    for(let i=1;i<=148;i++){ if(!BANNED.includes(i)) available.push(i); }
-    const chosenId = available[hash % available.length];
+    const chosenId = (hash % 151) + 1;
     const chosenPoke = POKEMON_151.find(p=>p.id===chosenId) || {id:chosenId,name:"ポケモン",types:["normal"]};
     const pokeName = chosenPoke.name;
 
