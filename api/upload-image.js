@@ -22,16 +22,16 @@ export default async function handler(req, res) {
     });
 
     const data = await response.json();
-    console.log("imgBB response:", JSON.stringify(data?.data?.image));
 
     if (!data.success) {
       return res.status(500).json({ error: "imgBB upload failed", detail: data });
     }
 
-    // data.data.image.url が直接アクセスできる画像URL（Xが読める）
-    // display_url はページURLなのでNG
-    const url = data.data.image?.url || data.data.url;
-    console.log("Image URL:", url);
+    // imgBB APIのレスポンス構造:
+    // data.data.display_url = 直接画像URL (https://i.ibb.co/xxx/name.png) ← Xが読める
+    // data.data.url = HTMLビューアページ ← NGだった
+    const url = data.data.display_url;
+    console.log("Direct image URL:", url);
     return res.status(200).json({ url });
 
   } catch (err) {
