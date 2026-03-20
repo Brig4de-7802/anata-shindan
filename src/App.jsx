@@ -867,15 +867,19 @@ ${summary}
 
   const postToX = () => {
     if (!shareModal) return;
-    // 公開URLがあれば → OGPページURLをツイートに含める（Xがカード画像を自動表示）
-    // なければ → サイトURLのみ（画像なし）
-    const shareUrl = shareModal.publicUrl
+    // text= にはメッセージ＋ハッシュタグだけ（URLを含めない）
+    // url= にOGPページURLを別で渡す → Xが自動でt.co短縮＋カード表示
+    const ogpUrl = shareModal.publicUrl
       ? `https://anata-shindan.vercel.app/api/ogp?img=${encodeURIComponent(shareModal.publicUrl)}&name=${encodeURIComponent(result.pokemonName)}&tag=${encodeURIComponent(result.tagline)}`
       : "https://anata-shindan.vercel.app";
-    // テキストにURLを含める（text= のみ使用、url= は使わない方が確実）
-    const fullText = shareModal.text + "\n" + shareUrl;
-    window.open(`https://twitter.com/intent/post?text=${encodeURIComponent(fullText)}`, "_blank");
-    // 画像もDL（PCで手動添付できるように）
+
+    const tweetText = encodeURIComponent(shareModal.text);
+    const tweetUrl  = encodeURIComponent(ogpUrl);
+    window.open(
+      `https://twitter.com/intent/post?text=${tweetText}&url=${tweetUrl}`,
+      "_blank"
+    );
+    // PCは画像もDL（手動添付用）
     const a = document.createElement("a");
     a.href = shareModal.dataUrl; a.download = "anata-shindan.png"; a.click();
     setShareModal(null);
