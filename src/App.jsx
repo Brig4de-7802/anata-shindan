@@ -847,7 +847,7 @@ export default function ShindanApp() {
     setShareState("capturing");
     try {
       const { dataUrl, blob } = await captureCard();
-      const text = `🎮 私は「${result.pokemonName}タイプ」でした！\n「${result.tagline}」\n\n#ポケモン診断 #アナタ診断 #性格診断`;
+      const text = `🎮 私は「${result.pokemonName}タイプ」でした！\n「${result.tagline}」\n\n#ポケモン診断 #アナタ診断 #性格診断\nhttps://anata-shindan.vercel.app`;
       const base64 = dataUrl.split(",")[1];
       let publicUrl = null;
       try {
@@ -865,19 +865,15 @@ export default function ShindanApp() {
 
   const postToX = () => {
     if (!shareModal) return;
-    // テキスト＋URL＋ハッシュタグをまとめてtext=に入れる
-    const fullText = shareModal.text + "\nhttps://anata-shindan.vercel.app";
-    const encoded  = encodeURIComponent(fullText);
+    const encoded  = encodeURIComponent(shareModal.text);
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     setShareModal(null);
     if (isMobile) {
-      // スマホ：Xアプリ直接起動
       window.location.href = `twitter://post?message=${encoded}`;
       setTimeout(() => {
         window.open(`https://twitter.com/intent/tweet?text=${encoded}`, "_blank");
       }, 1500);
     } else {
-      // PC：画像DL＋ブラウザでX投稿画面
       const a = document.createElement("a");
       a.href = shareModal.dataUrl; a.download = "anata-shindan.png"; a.click();
       setTimeout(() => {
