@@ -847,7 +847,7 @@ export default function ShindanApp() {
     setShareState("capturing");
     try {
       const { dataUrl, blob } = await captureCard();
-      const text = "🎮 私は「" + result.pokemonName + "タイプ」でした！\n「" + result.tagline + "」\n\n#ポケモン診断 #アナタ診断 #性格診断\nhttps://anata-shindan.vercel.app\n\n📎 ここに画像を貼り付けてください";
+      const text = "🎮 私は「" + result.pokemonName + "タイプ」でした！\n「" + result.tagline + "」\n\n#ポケモン診断 #アナタ診断 #性格診断\nhttps://anata-shindan.vercel.app";
       const base64 = dataUrl.split(",")[1];
       let publicUrl = null;
       try {
@@ -1127,6 +1127,10 @@ export default function ShindanApp() {
                   📥 画像が保存されました<br/>
                   <span style={{fontWeight:700,color:"white"}}>投稿画面で「ここに画像を貼り付けてください」</span><br/>
                   <span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>📎 または画像アイコンをタップして添付</span>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,padding:"10px 14px",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:12}}>
+                  <span style={{flex:1,fontSize:12,color:"rgba(255,255,255,0.6)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>https://anata-shindan.vercel.app</span>
+                  <button onClick={async()=>{await navigator.clipboard.writeText("https://anata-shindan.vercel.app");setCopied(true);setTimeout(()=>setCopied(false),2000);}} style={{flexShrink:0,padding:"5px 12px",borderRadius:8,border:"none",background:"rgba(139,92,246,0.5)",color:"white",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>{copied?"✅ コピー済":"📋 コピー"}</button>
                 </div>
                 <button onClick={postToX} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,width:"100%",padding:"16px",borderRadius:16,fontSize:15,fontWeight:800,cursor:"pointer",border:"none",background:"#000",color:"white",marginBottom:10,transition:"background 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="#222"} onMouseLeave={e=>e.currentTarget.style.background="#000"}>
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.74l7.73-8.835L1.254 2.25H8.08l4.259 5.63 5.905-5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
