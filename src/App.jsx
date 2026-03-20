@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const POKEMON_151 = [
   {id:1,name:"フシギダネ",types:["grass","poison"]},{id:2,name:"フシギソウ",types:["grass","poison"]},{id:3,name:"フシギバナ",types:["grass","poison"]},
@@ -472,23 +472,10 @@ function TypeSVG({ type, size }) {
   );
 }
 
-// PokeSprite — 本物イラスト（Vercel/Web用）+ SVGフォールバック
+// PokeSprite — SVGイラスト表示（CSP対応）
 function PokeSprite({ id, size = 96, float = false }) {
   const poke = POKEMON_151.find(p => p.id === id);
   const type = poke?.types?.[0] || "normal";
-  const pad = String(id).padStart(3, "0");
-
-  const SRCS = [
-    `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`,
-    `https://assets.pokemon.com/assets/cms2/img/pokedex/full/${pad}.png`,
-    `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`,
-  ];
-
-  const [srcIdx, setSrcIdx] = useState(0);
-  const [loaded, setLoaded] = useState(false);
-  const failed = srcIdx >= SRCS.length;
-
-  useEffect(() => { setSrcIdx(0); setLoaded(false); }, [id]);
 
   return (
     <div style={{
@@ -496,31 +483,8 @@ function PokeSprite({ id, size = 96, float = false }) {
       display: "flex", alignItems: "center", justifyContent: "center",
       animation: float ? "float 3s ease-in-out infinite" : undefined,
       filter: `drop-shadow(0 4px 20px ${TYPE_COLORS[type] || "#9575CD"}66)`,
-      position: "relative",
     }}>
-      {failed ? (
-        <TypeSVG type={type} size={size}/>
-      ) : (
-        <>
-          {!loaded && (
-            <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
-              <TypeSVG type={type} size={size * 0.7}/>
-            </div>
-          )}
-          <img
-            key={`${id}-${srcIdx}`}
-            src={SRCS[srcIdx]}
-            alt={poke?.name || `pokemon-${id}`}
-            style={{
-              width: size, height: size, objectFit: "contain",
-              opacity: loaded ? 1 : 0, transition: "opacity 0.4s ease",
-              position: "relative", zIndex: 1,
-            }}
-            onLoad={() => setLoaded(true)}
-            onError={() => { setLoaded(false); setSrcIdx(i => i + 1); }}
-          />
-        </>
-      )}
+      <TypeSVG type={type} size={size}/>
     </div>
   );
 }
@@ -751,12 +715,14 @@ ${summary}
 `;
 
     try {
-      const res = await fetch("/api/diagnose",{
+      const res = await fetch("https://api.anthropic.com/v1/messages",{
         method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({prompt}),
+        body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1200,messages:[{role:"user",content:prompt}]}),
       });
       const data = await res.json();
-      setResult(data);
+      const text = data.content?.map(c=>c.text||"").join("")||"";
+      const clean = text.replace(/```json|```/g,"").trim();
+      setResult(JSON.parse(clean));
     } catch {
       setResult({
         pokemonId:94,pokemonName:"ゲンガー",
@@ -788,12 +754,42 @@ ${summary}
   const reset = () => { setScreen("top");setCurrentQ(0);setAnswers([]);setResult(null);setResultVisible(false); };
   const goBack = () => { if(currentQ === 0){ reset(); } else { setCurrentQ(q => q-1); setAnswers(a => a.slice(0,-1)); } };
 
-  const handleShare = async () => {
-    if(!result)return;
+  const resultCardRef = useRef(null);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+
+  const getShareText = () => {
+    if(!result) return "";
     const good = result.goodCompatibility?.map(g=>g.pokemonName).join("・")||"";
     const bad  = result.badCompatibility?.map(b=>b.pokemonName).join("・")||"";
-    const text = `🎮 ポケモン診断\n\n✨ ${result.pokemonName}タイプ\n「${result.tagline}」\n\n${result.personality}\n\n💚 相性◎：${good}\n💔 相性×：${bad}\n\n#ポケモン診断 #アナタ診断`;
-    try{await navigator.clipboard.writeText(text);setCopied(true);setTimeout(()=>setCopied(false),2200);}catch{}
+    return `🎮 私は「${result.pokemonName}タイプ」でした！\n「${result.tagline}」\n\n💚 相性◎：${good}\n💔 相性×：${bad}\n\n#ポケモン診断 #アナタ診断 #性格診断`;
+  };
+
+  const shareToX = () => {
+    const text = encodeURIComponent(getShareText());
+    const url = encodeURIComponent("https://anata-shindan.vercel.app");
+    window.open(`https://twitter.com/intent/tweet?text=${text}&url=${url}`, "_blank");
+    setShowShareModal(false);
+  };
+
+  const shareToLine = () => {
+    const text = encodeURIComponent(getShareText() + "\nhttps://anata-shindan.vercel.app");
+    window.open(`https://social-plugins.line.me/lineit/share?url=${encodeURIComponent("https://anata-shindan.vercel.app")}&text=${encodeURIComponent(getShareText())}`, "_blank");
+    setShowShareModal(false);
+  };
+
+  const copyText = async () => {
+    try {
+      await navigator.clipboard.writeText(getShareText() + "\nhttps://anata-shindan.vercel.app");
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2200);
+    } catch {}
+    setShowShareModal(false);
+  };
+
+  const handleShare = () => {
+    if(!result) return;
+    setShowShareModal(true);
   };
 
   const base = {
@@ -1012,8 +1008,98 @@ ${summary}
           {/* ── アクション ── */}
           <div style={{display:"flex",flexDirection:"column",gap:11,animation:"fadeUp 0.5s 0.6s both ease"}}>
             <button onClick={handleShare} style={{padding:"15px",borderRadius:50,fontSize:14,fontWeight:700,cursor:"pointer",border:"none",background:"linear-gradient(135deg,#a855f7,#ec4899)",color:"white",boxShadow:"0 0 26px rgba(168,85,247,0.38)"}}>
-              {copied?"✅ コピーしました！":"📤 結果をシェアする"}
+              "📣 結果をSNSでシェア"}
             </button>
+
+          {/* ── SNSシェアモーダル ── */}
+          {showShareModal && (
+            <div
+              onClick={()=>setShowShareModal(false)}
+              style={{
+                position:"fixed",inset:0,zIndex:1000,
+                background:"rgba(0,0,0,0.75)",backdropFilter:"blur(6px)",
+                display:"flex",alignItems:"flex-end",justifyContent:"center",
+                padding:"0 16px 32px",
+              }}
+            >
+              <div
+                onClick={e=>e.stopPropagation()}
+                style={{
+                  width:"100%",maxWidth:480,
+                  background:"linear-gradient(135deg,#1a0030,#0d001e)",
+                  border:"1px solid rgba(139,92,246,0.35)",
+                  borderRadius:24,padding:"24px 20px",
+                  animation:"fadeUp 0.25s ease",
+                }}
+              >
+                <div style={{fontSize:13,color:"rgba(255,255,255,0.5)",textAlign:"center",marginBottom:20,letterSpacing:2}}>シェア先を選択</div>
+
+                {/* X (Twitter) */}
+                <button
+                  onClick={shareToX}
+                  style={{
+                    display:"flex",alignItems:"center",gap:14,
+                    width:"100%",padding:"16px 20px",borderRadius:16,
+                    background:"rgba(0,0,0,0.6)",border:"1px solid rgba(255,255,255,0.15)",
+                    color:"white",cursor:"pointer",marginBottom:12,
+                    fontSize:15,fontWeight:700,transition:"all 0.18s",
+                  }}
+                  onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.12)";e.currentTarget.style.borderColor="rgba(255,255,255,0.4)";}}
+                  onMouseLeave={e=>{e.currentTarget.style.background="rgba(0,0,0,0.6)";e.currentTarget.style.borderColor="rgba(255,255,255,0.15)";}}
+                >
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="white">
+                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.74l7.73-8.835L1.254 2.25H8.08l4.259 5.63 5.905-5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                  </svg>
+                  <span>X（Twitter）に投稿する</span>
+                </button>
+
+                {/* LINE */}
+                <button
+                  onClick={shareToLine}
+                  style={{
+                    display:"flex",alignItems:"center",gap:14,
+                    width:"100%",padding:"16px 20px",borderRadius:16,
+                    background:"rgba(0,185,0,0.15)",border:"1px solid rgba(0,185,0,0.35)",
+                    color:"white",cursor:"pointer",marginBottom:12,
+                    fontSize:15,fontWeight:700,transition:"all 0.18s",
+                  }}
+                  onMouseEnter={e=>{e.currentTarget.style.background="rgba(0,185,0,0.28)";e.currentTarget.style.borderColor="rgba(0,185,0,0.6)";}}
+                  onMouseLeave={e=>{e.currentTarget.style.background="rgba(0,185,0,0.15)";e.currentTarget.style.borderColor="rgba(0,185,0,0.35)";}}
+                >
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="#00B900">
+                    <path d="M24 10.304c0-5.369-5.383-9.738-12-9.738-6.616 0-12 4.369-12 9.738 0 4.814 4.269 8.846 10.036 9.608.391.084.922.258 1.057.592.121.303.079.778.039 1.085l-.171 1.027c-.053.303-.242 1.186 1.039.647 1.281-.54 6.911-4.069 9.428-6.967 1.739-1.907 2.572-3.843 2.572-5.992zm-18.988-1.49c0-.166.132-.301.296-.301h3.609c.166 0 .298.135.298.301v.667c0 .166-.132.301-.298.301h-2.61v.667h2.61c.166 0 .298.135.298.301v.667c0 .166-.132.301-.298.301h-2.61v.667h2.61c.166 0 .298.135.298.301v.667c0 .166-.132.301-.298.301h-3.609c-.164 0-.296-.135-.296-.301v-4.341zm5.604 4.341c0 .166-.132.301-.298.301h-.667c-.164 0-.296-.135-.296-.301v-4.341c0-.166.132-.301.296-.301h.667c.166 0 .298.135.298.301v4.341zm4.856 0c0 .166-.132.301-.298.301h-.667c-.089 0-.172-.044-.228-.116l-2.101-2.839v2.654c0 .166-.132.301-.298.301h-.667c-.164 0-.296-.135-.296-.301v-4.341c0-.166.132-.301.296-.301h.667c.089 0 .172.044.228.116l2.101 2.839v-2.654c0-.166.132-.301.298-.301h.667c.166 0 .298.135.298.301v4.341zm3.745-3.341c0 .166-.132.301-.298.301h-2.61v.667h2.61c.166 0 .298.135.298.301v.667c0 .166-.132.301-.298.301h-2.61v.667h2.61c.166 0 .298.135.298.301v.667c0 .166-.132.301-.298.301h-3.609c-.164 0-.296-.135-.296-.301v-4.341c0-.166.132-.301.296-.301h3.609c.166 0 .298.135.298.301v.667z"/>
+                  </svg>
+                  <span>LINEで送る</span>
+                </button>
+
+                {/* テキストコピー */}
+                <button
+                  onClick={copyText}
+                  style={{
+                    display:"flex",alignItems:"center",gap:14,
+                    width:"100%",padding:"16px 20px",borderRadius:16,
+                    background:"rgba(139,92,246,0.15)",border:"1px solid rgba(139,92,246,0.3)",
+                    color:"white",cursor:"pointer",marginBottom:20,
+                    fontSize:15,fontWeight:700,transition:"all 0.18s",
+                  }}
+                  onMouseEnter={e=>{e.currentTarget.style.background="rgba(139,92,246,0.28)";e.currentTarget.style.borderColor="rgba(139,92,246,0.6)";}}
+                  onMouseLeave={e=>{e.currentTarget.style.background="rgba(139,92,246,0.15)";e.currentTarget.style.borderColor="rgba(139,92,246,0.3)";}}
+                >
+                  <span style={{fontSize:20}}>📋</span>
+                  <span>{copied ? "✅ コピーしました！" : "テキストをコピー"}</span>
+                </button>
+
+                <button
+                  onClick={()=>setShowShareModal(false)}
+                  style={{
+                    width:"100%",padding:"13px",borderRadius:14,
+                    background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",
+                    color:"rgba(255,255,255,0.5)",cursor:"pointer",fontSize:13,
+                  }}
+                >キャンセル</button>
+              </div>
+            </div>
+          )}
             <button onClick={reset} style={{padding:"13px",borderRadius:50,fontSize:13,cursor:"pointer",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.11)",color:"rgba(255,255,255,0.8)"}}>🔄 もう一度診断する</button>
           </div>
 
