@@ -847,7 +847,6 @@ ${summary}
     try {
       const { dataUrl, blob } = await captureCard();
       const text = `🎮 私は「${result.pokemonName}タイプ」でした！\n「${result.tagline}」\n\n#ポケモン診断 #アナタ診断 #性格診断`;
-      // base64をサーバーに送って公開URLを得る
       const base64 = dataUrl.split(",")[1];
       let publicUrl = null;
       try {
@@ -857,44 +856,36 @@ ${summary}
           body: JSON.stringify({ base64, pokemonName: result.pokemonName }),
         });
         const data = await res.json();
+        console.log("upload result:", data);
         publicUrl = data.url || null;
       } catch (e) { console.warn("upload failed:", e); }
+      console.log("publicUrl:", publicUrl);
       setShareModal({ dataUrl, blob, publicUrl, text });
     } catch (e) { console.error(e); }
     setShareState("idle");
   };
 
-  // ── Xに投稿 ──
-  // 公開URLがある場合 → /api/ogp?img=... をシェアURLにする
-  // → XクローラーがOGPを読んでカード画像として表示
   const postToX = () => {
     if (!shareModal) return;
-    let shareUrl;
-    if (shareModal.publicUrl) {
-      const ogpUrl = `https://anata-shindan.vercel.app/api/ogp?img=${encodeURIComponent(shareModal.publicUrl)}&name=${encodeURIComponent(result.pokemonName)}&tag=${encodeURIComponent(result.tagline)}`;
-      shareUrl = ogpUrl;
-    } else {
-      shareUrl = "https://anata-shindan.vercel.app";
-    }
-    // テキスト（URLは別で渡す）
-    const tweetText = encodeURIComponent(shareModal.text);
-    const tweetUrl  = encodeURIComponent(shareUrl);
-    window.open(`https://twitter.com/intent/tweet?text=${tweetText}&url=${tweetUrl}`, "_blank");
-    // 画像DL（PCで手動添付用）
+    // 公開URLがあれば → OGPページURLをツイートに含める（Xがカード画像を自動表示）
+    // なければ → サイトURLのみ（画像なし）
+    const shareUrl = shareModal.publicUrl
+      ? `https://anata-shindan.vercel.app/api/ogp?img=${encodeURIComponent(shareModal.publicUrl)}&name=${encodeURIComponent(result.pokemonName)}&tag=${encodeURIComponent(result.tagline)}`
+      : "https://anata-shindan.vercel.app";
+    // テキストにURLを含める（text= のみ使用、url= は使わない方が確実）
+    const fullText = shareModal.text + "\n" + shareUrl;
+    window.open(`https://twitter.com/intent/post?text=${encodeURIComponent(fullText)}`, "_blank");
+    // 画像もDL（PCで手動添付できるように）
     const a = document.createElement("a");
     a.href = shareModal.dataUrl; a.download = "anata-shindan.png"; a.click();
     setShareModal(null);
   };
 
-  // ── LINEで送る ──
   const postToLine = () => {
     if (!shareModal) return;
-    let shareUrl;
-    if (shareModal.publicUrl) {
-      shareUrl = `https://anata-shindan.vercel.app/api/ogp?img=${encodeURIComponent(shareModal.publicUrl)}&name=${encodeURIComponent(result.pokemonName)}&tag=${encodeURIComponent(result.tagline)}`;
-    } else {
-      shareUrl = "https://anata-shindan.vercel.app";
-    }
+    const shareUrl = shareModal.publicUrl
+      ? `https://anata-shindan.vercel.app/api/ogp?img=${encodeURIComponent(shareModal.publicUrl)}&name=${encodeURIComponent(result.pokemonName)}&tag=${encodeURIComponent(result.tagline)}`
+      : "https://anata-shindan.vercel.app";
     const url = encodeURIComponent(shareUrl);
     const txt = encodeURIComponent(shareModal.text);
     window.open(`https://social-plugins.line.me/lineit/share?url=${url}&text=${txt}`, "_blank");
@@ -1169,9 +1160,21 @@ ${summary}
               <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:520,background:"linear-gradient(135deg,#16003a,#0a0020)",border:"1px solid rgba(139,92,246,0.35)",borderRadius:"24px 24px 0 0",padding:"24px 18px 36px",animation:"fadeUp 0.28s ease"}}>
 
                 {/* ヘッダー */}
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
                   <span style={{fontSize:15,fontWeight:800,color:"white"}}>📤 シェアする</span>
                   <button onClick={()=>setShareModal(null)} style={{background:"rgba(255,255,255,0.1)",border:"none",color:"white",width:30,height:30,borderRadius:"50%",cursor:"pointer",fontSize:14}}>✕</button>
+                </div>
+                {/* 画像アップロード状態 */}
+                <div style={{
+                  padding:"8px 12px",borderRadius:10,marginBottom:12,fontSize:11,
+                  background: shareModal?.publicUrl ? "rgba(52,211,153,0.15)" : "rgba(251,191,36,0.15)",
+                  border: `1px solid ${shareModal?.publicUrl ? "rgba(52,211,153,0.4)" : "rgba(251,191,36,0.4)"}`,
+                  color: shareModal?.publicUrl ? "#34d399" : "#fbbf24",
+                  textAlign:"center",
+                }}>
+                  {shareModal?.publicUrl
+                    ? "✅ 画像のアップロード成功！Xに投稿するとカード画像が表示されます"
+                    : "⚠️ 画像のアップロード失敗。Xボタンを押すと画像がDLされるので手動で添付してください"}
                 </div>
 
                 {/* プレビュー画像 */}
