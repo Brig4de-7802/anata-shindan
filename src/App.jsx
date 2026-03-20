@@ -865,21 +865,31 @@ ${summary}
     setShareState("idle");
   };
 
-  const postToX = () => {
+  const postToX = async () => {
     if (!shareModal) return;
-    // text= にはメッセージ＋ハッシュタグだけ（URLを含めない）
-    // url= にOGPページURLを別で渡す → Xが自動でt.co短縮＋カード表示
+
     const ogpUrl = shareModal.publicUrl
       ? `https://anata-shindan.vercel.app/api/ogp?img=${encodeURIComponent(shareModal.publicUrl)}&name=${encodeURIComponent(result.pokemonName)}&tag=${encodeURIComponent(result.tagline)}`
       : "https://anata-shindan.vercel.app";
 
+    // TinyURLで短縮（https://tinyurl.com/api-create.php?url=...）
+    let shortUrl = ogpUrl;
+    try {
+      const r = await fetch(
+        `https://tinyurl.com/api-create.php?url=${encodeURIComponent(ogpUrl)}`
+      );
+      const t = await r.text();
+      if (t.startsWith("https://tinyurl.com/")) shortUrl = t.trim();
+    } catch (e) { /* 失敗したら元のURLを使う */ }
+
+    // text= にメッセージ、url= に短縮URL（Xがt.coに変換してカード表示）
     const tweetText = encodeURIComponent(shareModal.text);
-    const tweetUrl  = encodeURIComponent(ogpUrl);
+    const tweetUrl  = encodeURIComponent(shortUrl);
     window.open(
       `https://twitter.com/intent/post?text=${tweetText}&url=${tweetUrl}`,
       "_blank"
     );
-    // PCは画像もDL（手動添付用）
+    // 画像DL（PC用）
     const a = document.createElement("a");
     a.href = shareModal.dataUrl; a.download = "anata-shindan.png"; a.click();
     setShareModal(null);
