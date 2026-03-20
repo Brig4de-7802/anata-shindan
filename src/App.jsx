@@ -472,10 +472,23 @@ function TypeSVG({ type, size }) {
   );
 }
 
-// PokeSprite — SVGイラスト表示（CSP対応）
+// PokeSprite — 本物イラスト（Vercel/Web用）+ SVGフォールバック
 function PokeSprite({ id, size = 96, float = false }) {
   const poke = POKEMON_151.find(p => p.id === id);
   const type = poke?.types?.[0] || "normal";
+  const pad = String(id).padStart(3, "0");
+
+  const SRCS = [
+    `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`,
+    `https://assets.pokemon.com/assets/cms2/img/pokedex/full/${pad}.png`,
+    `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`,
+  ];
+
+  const [srcIdx, setSrcIdx] = useState(0);
+  const [loaded, setLoaded] = useState(false);
+  const failed = srcIdx >= SRCS.length;
+
+  useEffect(() => { setSrcIdx(0); setLoaded(false); }, [id]);
 
   return (
     <div style={{
@@ -483,8 +496,31 @@ function PokeSprite({ id, size = 96, float = false }) {
       display: "flex", alignItems: "center", justifyContent: "center",
       animation: float ? "float 3s ease-in-out infinite" : undefined,
       filter: `drop-shadow(0 4px 20px ${TYPE_COLORS[type] || "#9575CD"}66)`,
+      position: "relative",
     }}>
-      <TypeSVG type={type} size={size}/>
+      {failed ? (
+        <TypeSVG type={type} size={size}/>
+      ) : (
+        <>
+          {!loaded && (
+            <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
+              <TypeSVG type={type} size={size * 0.7}/>
+            </div>
+          )}
+          <img
+            key={`${id}-${srcIdx}`}
+            src={SRCS[srcIdx]}
+            alt={poke?.name || `pokemon-${id}`}
+            style={{
+              width: size, height: size, objectFit: "contain",
+              opacity: loaded ? 1 : 0, transition: "opacity 0.4s ease",
+              position: "relative", zIndex: 1,
+            }}
+            onLoad={() => setLoaded(true)}
+            onError={() => { setLoaded(false); setSrcIdx(i => i + 1); }}
+          />
+        </>
+      )}
     </div>
   );
 }
