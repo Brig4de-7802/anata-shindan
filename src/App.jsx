@@ -804,118 +804,105 @@ ${summary}
 
   const [shareState, setShareState] = useState("idle"); // idle | capturing | done
 
-  // ── html2canvas ロード（CDN） ──
-  const loadHtml2Canvas = () =>
-    new Promise((res, rej) => {
-      if (window.html2canvas) { res(window.html2canvas); return; }
-      const s = document.createElement("script");
-      s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
-      s.onload = () => res(window.html2canvas);
-      s.onerror = rej;
-      document.head.appendChild(s);
-    });
+  // ── html2canvas ロード ──
+  const loadH2C = () => new Promise((res, rej) => {
+    if (window.html2canvas) { res(window.html2canvas); return; }
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+    s.onload = () => res(window.html2canvas);
+    s.onerror = rej;
+    document.head.appendChild(s);
+  });
 
-  // ── 結果カードを画像化してBlobを返す ──
+  // ── 結果カードをBlobにキャプチャ ──
   const captureCard = async () => {
     const card = document.getElementById("result-share-card");
     if (!card) throw new Error("card not found");
-    const h2c = await loadHtml2Canvas();
+    const h2c = await loadH2C();
     const canvas = await h2c(card, {
-      backgroundColor: "#0b001e",
-      scale: 2,
-      useCORS: true,
-      allowTaint: true,
-      logging: false,
-      width: card.offsetWidth,
-      height: card.offsetHeight,
+      backgroundColor: "#0b001e", scale: 2,
+      useCORS: true, allowTaint: true, logging: false,
     });
-    return new Promise((res) => canvas.toBlob(res, "image/png"));
+    return new Promise(res => canvas.toBlob(res, "image/png"));
+  };
+
+  // ── 画像をダウンロード ──
+  const downloadBlob = (blob, name = "anata-shindan.png") => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+  };
+
+  // ── 画像をクリップボードにコピー（対応ブラウザのみ） ──
+  const copyImageToClipboard = async (blob) => {
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({ "image/png": blob })
+      ]);
+      return true;
+    } catch { return false; }
   };
 
   // ── X（Twitter）でシェア ──
+  // 画像をクリップボードにコピー → X投稿画面を開く → トースト「Ctrl+Vで貼り付け」
   const shareToX = async () => {
+    if (!result) return;
     setShareState("capturing");
-    const text = encodeURIComponent(
-      `🎮 私は「${result.pokemonName}タイプ」でした！\n「${result.tagline}」\n\n#ポケモン診断 #アナタ診断\nhttps://anata-shindan.vercel.app`
-    );
     try {
       const blob = await captureCard();
-      const file = new File([blob], "shindan.png", { type: "image/png" });
-      // スマホ：Web Share API で画像ごと共有
-      if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({
-          text: decodeURIComponent(text),
-          files: [file],
-        });
-        setShareState("idle");
-        return;
-      }
-      // PC：画像ダウンロード → X投稿画面を開く
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = "anata-shindan.png";
-      a.click();
-      URL.revokeObjectURL(a.href);
-      setTimeout(() => {
-        window.open(`https://twitter.com/intent/tweet?text=${text}`, "_blank");
-      }, 600);
+      const copied = await copyImageToClipboard(blob);
+      // 画像をDLも同時に（クリップボード失敗時の保険）
+      downloadBlob(blob);
+      const text = encodeURIComponent(
+        `🎮 私は「${result.pokemonName}タイプ」でした！\n「${result.tagline}」\n\n#ポケモン診断 #アナタ診断\nhttps://anata-shindan.vercel.app`
+      );
+      window.open(`https://twitter.com/intent/tweet?text=${text}`, "_blank");
+      setShareState(copied ? "copied_x" : "saved_x");
+      setTimeout(() => setShareState("idle"), 4000);
     } catch (e) {
       console.error(e);
-      window.open(`https://twitter.com/intent/tweet?text=${text}`, "_blank");
+      setShareState("idle");
     }
-    setShareState("idle");
   };
 
   // ── LINE でシェア ──
   const shareToLine = async () => {
+    if (!result) return;
     setShareState("capturing");
-    const shareText = `🎮 私は「${result.pokemonName}タイプ」でした！\n「${result.tagline}」\n\n#ポケモン診断 #アナタ診断`;
     try {
       const blob = await captureCard();
-      const file = new File([blob], "shindan.png", { type: "image/png" });
-      // スマホ：Web Share API
-      if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({
-          text: shareText + "\nhttps://anata-shindan.vercel.app",
-          files: [file],
-        });
-        setShareState("idle");
-        return;
-      }
-      // PC：画像ダウンロード → LINE シェア画面
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = "anata-shindan.png";
-      a.click();
-      URL.revokeObjectURL(a.href);
-      setTimeout(() => {
-        const url = encodeURIComponent("https://anata-shindan.vercel.app");
-        const txt = encodeURIComponent(shareText);
-        window.open(`https://social-plugins.line.me/lineit/share?url=${url}&text=${txt}`, "_blank");
-      }, 600);
+      const copied = await copyImageToClipboard(blob);
+      downloadBlob(blob);
+      const url = encodeURIComponent("https://anata-shindan.vercel.app");
+      const txt = encodeURIComponent(
+        `🎮 私は「${result.pokemonName}タイプ」でした！\n「${result.tagline}」\n\n#ポケモン診断 #アナタ診断`
+      );
+      window.open(`https://social-plugins.line.me/lineit/share?url=${url}&text=${txt}`, "_blank");
+      setShareState(copied ? "copied_line" : "saved_line");
+      setTimeout(() => setShareState("idle"), 4000);
     } catch (e) {
       console.error(e);
-      const url = encodeURIComponent("https://anata-shindan.vercel.app");
-      window.open(`https://social-plugins.line.me/lineit/share?url=${url}`, "_blank");
+      setShareState("idle");
     }
-    setShareState("idle");
   };
 
   // ── 画像だけ保存 ──
   const saveImage = async () => {
+    if (!result) return;
     setShareState("capturing");
     try {
       const blob = await captureCard();
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = "anata-shindan.png";
-      a.click();
-      URL.revokeObjectURL(a.href);
-    } catch (e) { console.error(e); }
-    setShareState("idle");
+      downloadBlob(blob);
+      setShareState("saved");
+      setTimeout(() => setShareState("idle"), 3000);
+    } catch (e) { console.error(e); setShareState("idle"); }
   };
 
-  const handleShare = () => {};  // unused but kept for safety
+// unused but kept for safety
 
 
   const base = {
@@ -1134,15 +1121,32 @@ ${summary}
           {/* ── アクション ── */}
           <div style={{display:"flex",flexDirection:"column",gap:11,animation:"fadeUp 0.5s 0.6s both ease"}}>
 
-            {/* ── キャプチャ中オーバーレイ ── */}
+            {/* ── 状態トースト ── */}
+            {shareState !== "idle" && shareState !== "capturing" && (
+              <div style={{
+                padding:"12px 16px", borderRadius:14, marginBottom:4,
+                background: shareState.startsWith("copied") ? "rgba(52,211,153,0.18)" : "rgba(139,92,246,0.18)",
+                border: `1px solid ${shareState.startsWith("copied") ? "rgba(52,211,153,0.5)" : "rgba(139,92,246,0.5)"}`,
+                color:"white", fontSize:13, textAlign:"center", lineHeight:1.6,
+                animation:"fadeUp 0.3s ease",
+              }}>
+                {shareState === "copied_x"   && "✅ 画像をコピーしました！\nXの投稿画面で Ctrl+V（またはペースト）で貼り付けてください"}
+                {shareState === "saved_x"    && "📥 画像を保存しました！\nXの投稿画面で画像を添付して投稿してください"}
+                {shareState === "copied_line"&& "✅ 画像をコピーしました！\nLINEのトーク画面で貼り付けて送ってください"}
+                {shareState === "saved_line" && "📥 画像を保存しました！\nLINEのノートや送信に添付してください"}
+                {shareState === "saved"      && "📥 画像を保存しました！"}
+              </div>
+            )}
+
+            {/* ── キャプチャ中スピナー ── */}
             {shareState === "capturing" && (
               <div style={{
-                position:"fixed",inset:0,zIndex:2000,
-                background:"rgba(0,0,0,0.82)",backdropFilter:"blur(8px)",
-                display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,
+                display:"flex",alignItems:"center",justifyContent:"center",gap:10,
+                padding:"12px", borderRadius:14,
+                background:"rgba(139,92,246,0.12)",border:"1px solid rgba(139,92,246,0.3)",
               }}>
-                <div style={{width:52,height:52,borderRadius:"50%",border:"3px solid rgba(139,92,246,0.2)",borderTop:"3px solid #a855f7",animation:"spin 0.8s linear infinite"}}/>
-                <p style={{color:"rgba(255,255,255,0.8)",fontSize:14,fontWeight:600}}>画像を生成中…</p>
+                <div style={{width:18,height:18,borderRadius:"50%",border:"2px solid rgba(139,92,246,0.3)",borderTop:"2px solid #a855f7",animation:"spin 0.7s linear infinite",flexShrink:0}}/>
+                <span style={{fontSize:13,color:"rgba(255,255,255,0.75)"}}>画像を生成中…</span>
               </div>
             )}
 
@@ -1152,15 +1156,15 @@ ${summary}
               disabled={shareState==="capturing"}
               style={{
                 display:"flex",alignItems:"center",justifyContent:"center",gap:10,
-                padding:"15px",borderRadius:50,fontSize:14,fontWeight:700,cursor:"pointer",border:"none",
-                background:"linear-gradient(135deg,#000,#1a1a2e)",
+                padding:"15px",borderRadius:50,fontSize:14,fontWeight:700,
+                cursor:shareState==="capturing"?"not-allowed":"pointer",
                 border:"1px solid rgba(255,255,255,0.25)",
-                color:"white",boxShadow:"0 0 20px rgba(0,0,0,0.5)",
+                background:"#000", color:"white",
                 opacity:shareState==="capturing"?0.5:1,
                 transition:"all 0.18s",
               }}
-              onMouseEnter={e=>{ if(shareState!=="capturing"){e.currentTarget.style.borderColor="rgba(255,255,255,0.6)";e.currentTarget.style.background="linear-gradient(135deg,#111,#1e1e3f)"; }}}
-              onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.25)";e.currentTarget.style.background="linear-gradient(135deg,#000,#1a1a2e)";}}
+              onMouseEnter={e=>{ if(shareState!=="capturing") e.currentTarget.style.background="#1a1a1a"; }}
+              onMouseLeave={e=>{ e.currentTarget.style.background="#000"; }}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
                 <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.74l7.73-8.835L1.254 2.25H8.08l4.259 5.63 5.905-5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
@@ -1174,14 +1178,15 @@ ${summary}
               disabled={shareState==="capturing"}
               style={{
                 display:"flex",alignItems:"center",justifyContent:"center",gap:10,
-                padding:"15px",borderRadius:50,fontSize:14,fontWeight:700,cursor:"pointer",border:"none",
-                background:"linear-gradient(135deg,#00b300,#00c900)",
-                color:"white",boxShadow:"0 0 20px rgba(0,185,0,0.3)",
+                padding:"15px",borderRadius:50,fontSize:14,fontWeight:700,
+                cursor:shareState==="capturing"?"not-allowed":"pointer",
+                background:"linear-gradient(135deg,#06c755,#00b300)",
+                border:"none", color:"white",
                 opacity:shareState==="capturing"?0.5:1,
                 transition:"all 0.18s",
               }}
-              onMouseEnter={e=>{ if(shareState!=="capturing") e.currentTarget.style.background="linear-gradient(135deg,#00c900,#00e000)"; }}
-              onMouseLeave={e=>{ e.currentTarget.style.background="linear-gradient(135deg,#00b300,#00c900)"; }}
+              onMouseEnter={e=>{ if(shareState!=="capturing") e.currentTarget.style.background="linear-gradient(135deg,#08e060,#00c900)"; }}
+              onMouseLeave={e=>{ e.currentTarget.style.background="linear-gradient(135deg,#06c755,#00b300)"; }}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
                 <path d="M24 10.304c0-5.369-5.383-9.738-12-9.738-6.616 0-12 4.369-12 9.738 0 4.814 4.269 8.846 10.036 9.608.391.084.922.258 1.057.592.121.303.079.778.039 1.085l-.171 1.027c-.053.303-.242 1.186 1.039.647 1.281-.54 6.911-4.069 9.428-6.967 1.739-1.907 2.572-3.843 2.572-5.992zm-18.988-1.49c0-.166.132-.301.296-.301h3.609c.166 0 .298.135.298.301v.667c0 .166-.132.301-.298.301h-2.61v.667h2.61c.166 0 .298.135.298.301v.667c0 .166-.132.301-.298.301h-2.61v.667h2.61c.166 0 .298.135.298.301v.667c0 .166-.132.301-.298.301h-3.609c-.164 0-.296-.135-.296-.301v-4.341zm5.604 4.341c0 .166-.132.301-.298.301h-.667c-.164 0-.296-.135-.296-.301v-4.341c0-.166.132-.301.296-.301h.667c.166 0 .298.135.298.301v4.341zm4.856 0c0 .166-.132.301-.298.301h-.667c-.089 0-.172-.044-.228-.116l-2.101-2.839v2.654c0 .166-.132.301-.298.301h-.667c-.164 0-.296-.135-.296-.301v-4.341c0-.166.132-.301.296-.301h.667c.089 0 .172.044.228.116l2.101 2.839v-2.654c0-.166.132-.301.298-.301h.667c.166 0 .298.135.298.301v4.341zm3.745-3.341c0 .166-.132.301-.298.301h-2.61v.667h2.61c.166 0 .298.135.298.301v.667c0 .166-.132.301-.298.301h-2.61v.667h2.61c.166 0 .298.135.298.301v.667c0 .166-.132.301-.298.301h-3.609c-.164 0-.296-.135-.296-.301v-4.341c0-.166.132-.301.296-.301h3.609c.166 0 .298.135.298.301v.667z"/>
@@ -1189,21 +1194,22 @@ ${summary}
               <span>LINEに画像を送る</span>
             </button>
 
-            {/* 画像を保存 */}
+            {/* 画像だけ保存 */}
             <button
               onClick={saveImage}
               disabled={shareState==="capturing"}
               style={{
                 display:"flex",alignItems:"center",justifyContent:"center",gap:10,
-                padding:"14px",borderRadius:50,fontSize:13,fontWeight:600,cursor:"pointer",
+                padding:"13px",borderRadius:50,fontSize:13,fontWeight:600,
+                cursor:shareState==="capturing"?"not-allowed":"pointer",
                 background:"rgba(139,92,246,0.15)",
                 border:"1px solid rgba(139,92,246,0.4)",
                 color:"rgba(255,255,255,0.85)",
                 opacity:shareState==="capturing"?0.5:1,
                 transition:"all 0.18s",
               }}
-              onMouseEnter={e=>{ if(shareState!=="capturing"){e.currentTarget.style.background="rgba(139,92,246,0.28)";e.currentTarget.style.borderColor="rgba(139,92,246,0.7)"; }}}
-              onMouseLeave={e=>{e.currentTarget.style.background="rgba(139,92,246,0.15)";e.currentTarget.style.borderColor="rgba(139,92,246,0.4)";}}
+              onMouseEnter={e=>{ if(shareState!=="capturing"){e.currentTarget.style.background="rgba(139,92,246,0.3)";e.currentTarget.style.borderColor="rgba(139,92,246,0.7)";} }}
+              onMouseLeave={e=>{ e.currentTarget.style.background="rgba(139,92,246,0.15)";e.currentTarget.style.borderColor="rgba(139,92,246,0.4)"; }}
             >
               <span style={{fontSize:16}}>🖼️</span>
               <span>画像として保存する</span>
