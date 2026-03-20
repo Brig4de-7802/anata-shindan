@@ -1,4 +1,4 @@
-// api/upload-image.js — Cloudinary経由（TwitterのクローラーがブロックしないCDN）
+// api/upload-image.js — Cloudinary（folderなし・スラッシュ問題を修正）
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
@@ -13,6 +13,9 @@ export default async function handler(req, res) {
   }
 
   try {
+    // public_idにスラッシュを含めない（folderも使わない）
+    const safeId = `shindan${Date.now()}`;
+
     const response = await fetch(
       `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
       {
@@ -21,8 +24,8 @@ export default async function handler(req, res) {
         body: JSON.stringify({
           file: `data:image/png;base64,${base64}`,
           upload_preset: uploadPreset,
-          public_id: `shindan-${Date.now()}`,
-          folder: "anata-shindan",
+          public_id: safeId,
+          // folderは使わない
         }),
       }
     );
@@ -33,7 +36,6 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: data.error.message });
     }
 
-    // secure_url = https://res.cloudinary.com/... → Twitterが必ず読める
     console.log("Cloudinary URL:", data.secure_url);
     return res.status(200).json({ url: data.secure_url });
 
