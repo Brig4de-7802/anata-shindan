@@ -717,8 +717,10 @@ export default function ShindanApp() {
     else{setScreen("loading");await fetchResult(newAns);}
   };
 
+  const goBack = () => { if(currentQ===0){reset();}else{setCurrentQ(q=>q-1);setAnswers(a=>a.slice(0,-1));} };
+
   const fetchResult = async (ans) => {
-    // ポケモンIDを回答から決定論的に計算（ゲンガー等は出ない）
+    // ── ポケモンIDを決定論的に計算（ゲンガー等禁止）──
     const BANNED = [6, 25, 94, 149, 150, 151];
     const weights = {A:3, B:7, C:13, D:17};
     let hash = 0;
@@ -726,49 +728,95 @@ export default function ShindanApp() {
     const available = [];
     for(let i=1;i<=148;i++){ if(!BANNED.includes(i)) available.push(i); }
     const chosenId = available[hash % available.length];
-    const chosenPoke = POKEMON_151.find(p=>p.id===chosenId) || {id:chosenId, name:"ポケモン", types:["normal"]};
+    const chosenPoke = POKEMON_151.find(p=>p.id===chosenId) || {id:chosenId,name:"ポケモン",types:["normal"]};
+    const pokeName = chosenPoke.name;
 
     const summary = QUESTIONS.map((q,i)=>{
-      const c=q.options.find(o=>o.value===ans[i]);
-      return `Q${i+1}: ${q.text} → ${c?.label??ans[i]}`;
+      const c = q.options.find(o=>o.value===ans[i]);
+      return (i+1) + ". " + q.text + " → " + (c?.label??ans[i]);
     }).join("\n");
 
-    const pokeName = chosenPoke.name;
-    const prompt = `あなたはポケモン心理分析の専門家です。診断者は「${pokeName}」タイプと判定されました。以下の30問をもとに性格・相性・運勢を分析してください。\n\n${summary}\n\n以下のJSONのみ返答:\n{"pokemonId":${chosenId},"pokemonName":"${pokeName}","tagline":"キャッチコピー20文字以内","personality":"性格説明120文字","strength":"強み50文字","weakness":"弱点50文字","love":"恋愛傾向60文字","fortune2025":"2025運勢60文字","goodCompatibility":[{"pokemonId":1,"pokemonName":"名前","reason":"理由30文字"},{"pokemonId":2,"pokemonName":"名前","reason":"理由30文字"},{"pokemonId":3,"pokemonName":"名前","reason":"理由30文字"}],"badCompatibility":[{"pokemonId":4,"pokemonName":"名前","reason":"理由30文字"},{"pokemonId":5,"pokemonName":"名前","reason":"理由30文字"},{"pokemonId":7,"pokemonName":"名前","reason":"理由30文字"}],"score":{"charm":55,"luck":30,"power":90,"love":25,"wisdom":70}}`;
+    // プロンプトを配列で組み立ててjoin（エスケープ問題を回避）
+    const promptLines = [
+      "あなたはポケモン心理分析の専門家です。",
+      "診断者は「" + pokeName + "」タイプと判定されました。",
+      "以下の30問の回答をもとに、この人の性格・強み・弱点・恋愛・運勢・相性を分析してください。",
+      "",
+      "【回答】",
+      summary,
+      "",
+      "以下のJSON形式のみで返答（前後に余分なテキスト不要）:",
+      '{',
+      '  "pokemonId": ' + chosenId + ',',
+      '  "pokemonName": "' + pokeName + '",',
+      '  "tagline": "このポケモンらしいキャッチコピー（20文字以内）",',
+      '  "personality": "性格説明（120文字）",',
+      '  "strength": "最大の強み（50文字）",',
+      '  "weakness": "意外な弱点（50文字）",',
+      '  "love": "恋愛傾向（60文字）",',
+      '  "fortune2025": "2025年の運勢（60文字）",',
+      '  "goodCompatibility": [',
+      '    {"pokemonId": 任意のID, "pokemonName": "名前", "reason": "相性が良い理由（30文字）"},',
+      '    {"pokemonId": 任意のID, "pokemonName": "名前", "reason": "相性が良い理由（30文字）"},',
+      '    {"pokemonId": 任意のID, "pokemonName": "名前", "reason": "相性が良い理由（30文字）"}',
+      '  ],',
+      '  "badCompatibility": [',
+      '    {"pokemonId": 任意のID, "pokemonName": "名前", "reason": "相性が悪い理由（30文字）"},',
+      '    {"pokemonId": 任意のID, "pokemonName": "名前", "reason": "相性が悪い理由（30文字）"},',
+      '    {"pokemonId": 任意のID, "pokemonName": "名前", "reason": "相性が悪い理由（30文字）"}',
+      '  ],',
+      '  "score": {"charm": 整数, "luck": 整数, "power": 整数, "love": 整数, "wisdom": 整数}',
+      '}',
+      "【scoreルール】最高値と最低値の差50以上。得意（85〜98）と苦手（10〜30）を必ず1〜2項目。均一禁止。",
+    ];
+    const prompt = promptLines.join("\n");
 
     try {
       const res = await fetch("/api/diagnose",{
-        method:"POST",headers:{"Content-Type":"application/json"},
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
         body:JSON.stringify({prompt}),
       });
+      if(!res.ok) throw new Error("API error: " + res.status);
       const data = await res.json();
+      if(data.error) throw new Error(data.error);
+      // pokemonId/pokemonNameはAI返答に関わらず計算値で上書き
       data.pokemonId   = chosenId;
       data.pokemonName = pokeName;
       setResult(data);
     } catch(e) {
       console.error("fetchResult error:", e);
+      // フォールバック結果
       setResult({
-        pokemonId:chosenId, pokemonName:pokeName,
-        tagline:"あなただけの特別なタイプ",
-        personality:"個性豊かで独自の魅力を持つ。周囲とは違う視点で世界を見る力がある。",
-        strength:"独自の発想と柔軟な行動力",weakness:"頑固になりすぎることも",
-        love:"一途だが素直になれない",fortune2025:"新しい出会いが運を開く年",
-        goodCompatibility:[
-          {pokemonId:133,pokemonName:"イーブイ",reason:"多様性を認め合える"},
-          {pokemonId:35,pokemonName:"ピッピ",reason:"癒しで補い合える"},
-          {pokemonId:79,pokemonName:"ヤドン",reason:"マイペース同士で落ち着く"},
+        pokemonId: chosenId,
+        pokemonName: pokeName,
+        tagline: "あなただけの特別なタイプ",
+        personality: "個性豊かで独自の魅力を持つ。周囲とは違う視点で世界を見る力がある。",
+        strength: "独自の発想と柔軟な行動力",
+        weakness: "頑固になりすぎることも",
+        love: "一途だが素直になれない",
+        fortune2025: "新しい出会いが運を開く年",
+        goodCompatibility: [
+          {pokemonId:133, pokemonName:"イーブイ",   reason:"多様性を認め合える"},
+          {pokemonId:35,  pokemonName:"ピッピ",     reason:"癒しで補い合える"},
+          {pokemonId:79,  pokemonName:"ヤドン",     reason:"マイペース同士で落ち着く"},
         ],
-        badCompatibility:[
-          {pokemonId:57,pokemonName:"オコリザル",reason:"感情面でぶつかりやすい"},
-          {pokemonId:100,pokemonName:"ビリリダマ",reason:"予測不能で振り回される"},
-          {pokemonId:143,pokemonName:"カビゴン",reason:"行動力の差がストレスに"},
+        badCompatibility: [
+          {pokemonId:57,  pokemonName:"オコリザル",  reason:"感情面でぶつかりやすい"},
+          {pokemonId:100, pokemonName:"ビリリダマ",  reason:"予測不能で振り回される"},
+          {pokemonId:143, pokemonName:"カビゴン",   reason:"行動力の差がストレスに"},
         ],
-        score:{charm:72,luck:45,power:88,love:31,wisdom:79},
+        score: {charm:72, luck:45, power:88, love:31, wisdom:79},
       });
     }
     setScreen("result");
-    setTimeout(()=>setResultVisible(true),80);
+    setTimeout(()=>setResultVisible(true), 80);
   };
+
+
+  // ── シェア関連 state ──
+  const [shareState, setShareState] = useState("idle");
+  const [shareModal, setShareModal] = useState(null);
 
   // ── html2canvas ロード ──
   const loadH2C = () => new Promise((res, rej) => {
@@ -779,34 +827,21 @@ export default function ShindanApp() {
     document.head.appendChild(s);
   });
 
-  // ── 専用シェアカードをキャプチャ ──
   const captureCard = async () => {
-    // share-snapshot-card が描画されるまで少し待つ
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, 400));
     const card = document.getElementById("share-snapshot-card");
     if (!card) throw new Error("share card not found");
     const h2c = await loadH2C();
     const canvas = await h2c(card, {
-      backgroundColor: "#0b001e",
-      scale: 2,
-      useCORS: true,
-      allowTaint: true,
-      logging: false,
-      width: 600,
-      height: card.offsetHeight || 800,
+      backgroundColor: "#0b001e", scale: 2,
+      useCORS: true, allowTaint: true, logging: false,
+      width: 600, height: card.offsetHeight || 800,
     });
     const dataUrl = canvas.toDataURL("image/png");
     const blob = await new Promise(r => canvas.toBlob(r, "image/png"));
     return { dataUrl, blob };
   };
 
-    const [shareModal, setShareModal] = useState(null);
-  // shareModal = { dataUrl, blob, publicUrl, text } | null
-
-  // ── SNSシェアボタンを押したとき ──
-  // 1. 画像キャプチャ
-  // 2. /api/upload-image に送って公開URL取得
-  // 3. モーダル表示
   const openShareModal = async () => {
     if (!result) return;
     setShareState("capturing");
@@ -817,45 +852,31 @@ export default function ShindanApp() {
       let publicUrl = null;
       try {
         const res = await fetch("/api/upload-image", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ base64, pokemonName: result.pokemonName }),
+          method: "POST", headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({base64, pokemonName: result.pokemonName}),
         });
         const data = await res.json();
-        console.log("upload result:", data);
         publicUrl = data.url || null;
-      } catch (e) { console.warn("upload failed:", e); }
-      console.log("publicUrl:", publicUrl);
+      } catch(e) { console.warn("upload failed:", e); }
       setShareModal({ dataUrl, blob, publicUrl, text });
-    } catch (e) { console.error(e); }
+    } catch(e) { console.error(e); }
     setShareState("idle");
   };
 
   const postToX = async () => {
     if (!shareModal) return;
-
     const ogpUrl = shareModal.publicUrl
       ? `https://anata-shindan.vercel.app/api/ogp?img=${encodeURIComponent(shareModal.publicUrl)}&name=${encodeURIComponent(result.pokemonName)}&tag=${encodeURIComponent(result.tagline)}`
       : "https://anata-shindan.vercel.app";
-
-    // TinyURLで短縮（https://tinyurl.com/api-create.php?url=...）
     let shortUrl = ogpUrl;
     try {
-      const r = await fetch(
-        `https://tinyurl.com/api-create.php?url=${encodeURIComponent(ogpUrl)}`
-      );
+      const r = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(ogpUrl)}`);
       const t = await r.text();
       if (t.startsWith("https://tinyurl.com/")) shortUrl = t.trim();
-    } catch (e) { /* 失敗したら元のURLを使う */ }
-
-    // text= にメッセージ、url= に短縮URL（Xがt.coに変換してカード表示）
+    } catch(e) {}
     const tweetText = encodeURIComponent(shareModal.text);
     const tweetUrl  = encodeURIComponent(shortUrl);
-    window.open(
-      `https://twitter.com/intent/post?text=${tweetText}&url=${tweetUrl}`,
-      "_blank"
-    );
-    // 画像DL（PC用）
+    window.open(`https://twitter.com/intent/post?text=${tweetText}&url=${tweetUrl}`, "_blank");
     const a = document.createElement("a");
     a.href = shareModal.dataUrl; a.download = "anata-shindan.png"; a.click();
     setShareModal(null);
@@ -874,7 +895,6 @@ export default function ShindanApp() {
     setShareModal(null);
   };
 
-  // ── 画像だけ保存 ──
   const saveImage = () => {
     if (!shareModal) return;
     const a = document.createElement("a");
@@ -882,18 +902,12 @@ export default function ShindanApp() {
     setShareModal(null);
   };
 
+  const getTypes = (id) => { const p=POKEMON_151.find(p=>p.id===id); return p?p.types:["normal"]; };
+  const getMainColor = (types) => TYPE_COLORS[types?.[0]]||"#9575CD";
+  const reset = () => { setScreen("top");setCurrentQ(0);setAnswers([]);setResult(null);setResultVisible(false);setShareModal(null); };
 
-  const base = {
-    minHeight:"100vh",
-    background:"linear-gradient(135deg,#080014 0%,#0b001e 50%,#06001a 100%)",
-    fontFamily:"'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif",
-    color:"white",position:"relative",overflow:"hidden",
-  };
-  const glassCard = (ex={}) => ({
-    background:"rgba(255,255,255,0.04)",
-    border:"1px solid rgba(255,255,255,0.09)",
-    borderRadius:18, padding:"16px 18px", ...ex,
-  });
+  const base = {minHeight:"100vh",background:"linear-gradient(135deg,#080014 0%,#0b001e 50%,#06001a 100%)",fontFamily:"'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif",color:"white",position:"relative",overflow:"hidden"};
+  const glassCard = (ex={}) => ({background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)",borderRadius:18,padding:"16px 18px",...ex});
 
   /* ── TOP ── */
   if(screen==="top") return (
@@ -945,22 +959,12 @@ export default function ShindanApp() {
               ))}
             </div>
           </div>
-          <div style={{paddingTop:14,paddingBottom:4}}>
-            <button
-              onClick={goBack}
-              style={{
-                display:"flex", alignItems:"center", justifyContent:"center", gap:8,
-                width:"100%", padding:"13px 20px", borderRadius:14, cursor:"pointer",
-                background:"rgba(255,255,255,0.06)",
-                border:"1px solid rgba(255,255,255,0.18)",
-                color:"rgba(255,255,255,0.75)", fontSize:14, fontWeight:600,
-                transition:"all 0.18s",
-              }}
+          <div style={{paddingTop:14}}>
+            <button onClick={goBack} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",padding:"13px 20px",borderRadius:14,cursor:"pointer",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.18)",color:"rgba(255,255,255,0.75)",fontSize:14,fontWeight:600,transition:"all 0.18s"}}
               onMouseEnter={e=>{e.currentTarget.style.background="rgba(168,85,247,0.2)";e.currentTarget.style.borderColor="rgba(168,85,247,0.6)";e.currentTarget.style.color="white";}}
-              onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";e.currentTarget.style.borderColor="rgba(255,255,255,0.18)";e.currentTarget.style.color="rgba(255,255,255,0.75)";}}
-            >
+              onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";e.currentTarget.style.borderColor="rgba(255,255,255,0.18)";e.currentTarget.style.color="rgba(255,255,255,0.75)";}}>
               <span style={{fontSize:18}}>←</span>
-              <span>{currentQ === 0 ? "トップに戻る" : `Q${currentQ} に戻る`}</span>
+              <span>{currentQ===0?"トップに戻る":`Q${currentQ} に戻る`}</span>
             </button>
           </div>
         </div>
@@ -971,21 +975,11 @@ export default function ShindanApp() {
   /* ── LOADING ── */
   if(screen==="loading") return(
     <div style={{...base,display:"flex",alignItems:"center",justifyContent:"center"}}><Orbs/><Stars/>
-      <div style={{
-        position:"relative",zIndex:1,
-        display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
-        textAlign:"center",padding:"40px 32px",
-        width:"100%",maxWidth:400,
-      }}>
-        {/* ポケモンボール — 文字の真上・中央 */}
-        <div style={{display:"flex",justifyContent:"center",marginBottom:28}}>
-          <PokeBall size={90} spinning/>
-        </div>
-        <h2 style={{
-          fontSize:18,fontWeight:700,margin:"0 0 10px",
-          minHeight:28,width:"100%",
-          animation:"fadeUp 0.4s ease",
-        }}>{loadingMessages[loadingIdx]}</h2>
+      <div style={{position:"relative",zIndex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",padding:"40px 32px",width:"100%",maxWidth:400}}>
+        <div style={{display:"flex",justifyContent:"center",marginBottom:28}}><PokeBall size={90} spinning/></div>
+        <h2 style={{fontSize:18,fontWeight:700,margin:"0 0 10px",minHeight:28,width:"100%"}}>
+          {["あなたのオーラを解析中…","ポケモン図鑑と照合中…","タイプ相性を計算中…","隠れた才能を発掘中…","運命のポケモンを特定中…"][Math.floor(Date.now()/1000)%5]}
+        </h2>
         <p style={{fontSize:11,color:"rgba(255,255,255,0.35)",margin:"0 0 24px"}}>AIが30の回答を深層分析しています</p>
         <div style={{display:"flex",gap:7,justifyContent:"center",flexWrap:"wrap"}}>
           {["性格タイプ","相性診断","才能分析","運勢計算","ポケモン特定"].map((t,i)=>(
@@ -998,51 +992,60 @@ export default function ShindanApp() {
 
   /* ── RESULT ── */
   if(screen==="result"&&result){
-    const mainTypes = getTypes(result.pokemonId);
-    const mainColor = getMainColor(mainTypes);
-    const scores = result.score || {};
+    const mainTypes=getTypes(result.pokemonId);
+    const mainColor=getMainColor(mainTypes);
+    const scores=result.score||{};
 
     return(
       <div style={{...base,overflowY:"auto"}}><Orbs/><Stars/>
-        <div id="result-share-card" style={{position:"relative",zIndex:1,maxWidth:500,margin:"0 auto",padding:"22px 16px 48px",opacity:resultVisible?1:0,transition:"opacity 0.45s"}}>
+        {/* ── シェア用スナップショットカード（画面外・html2canvas用） ── */}
+        <div id="share-snapshot-card" style={{position:"fixed",left:"-9999px",top:0,width:600,background:"linear-gradient(135deg,#0a0015 0%,#0d0025 50%,#080020 100%)",padding:"40px 36px 48px",fontFamily:"'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif",color:"white",zIndex:-1}}>
+          <div style={{textAlign:"center",marginBottom:24}}>
+            <div style={{fontSize:10,letterSpacing:5,color:"rgba(167,139,250,0.7)",marginBottom:10,textTransform:"uppercase"}}>Your Pokemon Type</div>
+            <div style={{display:"flex",justifyContent:"center",marginBottom:10}}>
+              <div style={{width:120,height:120,borderRadius:"50%",background:`radial-gradient(circle,${mainColor}33 0%,transparent 70%)`,border:`2px solid ${mainColor}55`,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 0 32px ${mainColor}44`}}>
+                <PokeSprite id={result.pokemonId} size={96}/>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8,justifyContent:"center",marginBottom:10}}>
+              {mainTypes.map(t=><span key={t} style={{padding:"4px 14px",borderRadius:12,fontSize:12,fontWeight:800,background:`${TYPE_COLORS[t]||"#888"}44`,border:`1px solid ${TYPE_COLORS[t]||"#888"}88`,color:TYPE_COLORS[t]||"#ccc"}}>{TYPE_JP[t]||t}</span>)}
+            </div>
+            <div style={{fontSize:32,fontWeight:900,marginBottom:8,color:mainColor}}>{result.pokemonName}タイプ</div>
+            <div style={{fontSize:14,color:"rgba(255,255,255,0.7)",fontStyle:"italic",padding:"6px 16px",background:"rgba(139,92,246,0.15)",borderRadius:20,display:"inline-block"}}>「{result.tagline}」</div>
+          </div>
+          <div style={{background:"rgba(255,255,255,0.05)",borderRadius:16,padding:"16px 20px",marginBottom:16}}>
+            <div style={{fontSize:10,letterSpacing:3,color:"rgba(255,255,255,0.4)",marginBottom:12,textTransform:"uppercase"}}>パラメーター</div>
+            {[{l:"魅力",v:scores.charm??55,c:"#e879f9"},{l:"運勢",v:scores.luck??60,c:"#fbbf24"},{l:"行動力",v:scores.power??70,c:"#34d399"},{l:"愛情",v:scores.love??50,c:"#f87171"},{l:"知恵",v:scores.wisdom??65,c:"#60a5fa"}].map(({l,v,c})=>(
+              <div key={l} style={{marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3,color:"rgba(255,255,255,0.8)"}}><span>{l}</span><span style={{color:c,fontWeight:700}}>{v}</span></div>
+                <div style={{height:5,background:"rgba(255,255,255,0.08)",borderRadius:3}}><div style={{height:"100%",width:`${v}%`,background:`linear-gradient(90deg,${c}77,${c})`,borderRadius:3}}/></div>
+              </div>
+            ))}
+          </div>
+          <div style={{background:"rgba(255,255,255,0.04)",borderRadius:14,padding:"14px 16px",marginBottom:12}}>
+            <div style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginBottom:6,letterSpacing:2}}>🧬 性格</div>
+            <p style={{margin:0,fontSize:13,lineHeight:1.7,color:"rgba(255,255,255,0.9)"}}>{result.personality}</p>
+          </div>
+          <div style={{textAlign:"center",marginTop:20,fontSize:11,color:"rgba(255,255,255,0.3)",letterSpacing:1}}>🎮 anata-shindan.vercel.app</div>
+        </div>
 
-          {/* ── Hero ── */}
+        <div id="result-share-card" style={{position:"relative",zIndex:1,maxWidth:500,margin:"0 auto",padding:"22px 16px 48px",opacity:resultVisible?1:0,transition:"opacity 0.45s"}}>
+          {/* Hero */}
           <div style={{textAlign:"center",marginBottom:20,animation:"fadeUp 0.5s ease"}}>
             <div style={{fontSize:9,letterSpacing:5,color:"rgba(167,139,250,0.65)",marginBottom:14,textTransform:"uppercase"}}>Your Pokemon Type</div>
-
-            {/* スプライト */}
             <div style={{position:"relative",display:"inline-block",marginBottom:10,animation:"popIn 0.55s ease"}}>
-              <div style={{
-                width:140,height:140,borderRadius:"50%",margin:"0 auto",
-                background:`radial-gradient(circle,${mainColor}2a 0%,transparent 68%)`,
-                border:`2px solid ${mainColor}4a`,
-                display:"flex",alignItems:"center",justifyContent:"center",
-                boxShadow:`0 0 40px ${mainColor}44`,
-              }}>
+              <div style={{width:140,height:140,borderRadius:"50%",margin:"0 auto",background:`radial-gradient(circle,${mainColor}2a 0%,transparent 68%)`,border:`2px solid ${mainColor}4a`,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 0 40px ${mainColor}44`}}>
                 <PokeSprite id={result.pokemonId} size={112} float/>
               </div>
-              {/* スキャンラインエフェクト */}
-              <div style={{position:"absolute",inset:0,borderRadius:"50%",overflow:"hidden",pointerEvents:"none"}}>
-                <div style={{
-                  position:"absolute",left:0,right:0,height:"8%",
-                  background:"linear-gradient(transparent,rgba(255,255,255,0.04),transparent)",
-                  animation:"scanline 2.5s linear infinite",
-                }}/>
-              </div>
             </div>
-
-            {/* タイプバッジ */}
             <div style={{display:"flex",gap:7,justifyContent:"center",marginBottom:11}}>
-              {mainTypes.map(t=>(
-                <span key={t} style={{padding:"4px 13px",borderRadius:11,fontSize:11,fontWeight:800,background:`${TYPE_COLORS[t]||"#888"}38`,border:`1px solid ${TYPE_COLORS[t]||"#888"}77`,color:TYPE_COLORS[t]||"#ccc",letterSpacing:1}}>{TYPE_JP[t]||t}</span>
-              ))}
+              {mainTypes.map(t=><span key={t} style={{padding:"4px 13px",borderRadius:11,fontSize:11,fontWeight:800,background:`${TYPE_COLORS[t]||"#888"}38`,border:`1px solid ${TYPE_COLORS[t]||"#888"}77`,color:TYPE_COLORS[t]||"#ccc",letterSpacing:1}}>{TYPE_JP[t]||t}</span>)}
             </div>
-
             <h2 style={{fontSize:"clamp(1.65rem,6vw,2.3rem)",fontWeight:900,margin:"0 0 7px",background:`linear-gradient(90deg,${mainColor},#e879f9,${mainColor})`,backgroundSize:"200%",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",animation:"shimmer 3s linear infinite"}}>{result.pokemonName}タイプ</h2>
             <p style={{fontSize:12.5,color:"rgba(255,255,255,0.72)",fontStyle:"italic",padding:"7px 16px",background:`${mainColor}1a`,border:`1px solid ${mainColor}3a`,borderRadius:20,display:"inline-block"}}>「{result.tagline}」</p>
           </div>
 
-          {/* ── パラメーター ── */}
+          {/* パラメーター */}
           <div style={{...glassCard({marginBottom:12,animation:"fadeUp 0.5s 0.08s both ease"})}}>
             <div style={{fontSize:9,letterSpacing:3,color:"rgba(255,255,255,0.3)",marginBottom:13,textTransform:"uppercase"}}>パラメーター</div>
             <StatBar label="魅力" icon="✨" value={scores.charm??55}/>
@@ -1052,23 +1055,15 @@ export default function ShindanApp() {
             <StatBar label="知恵" icon="🧠" value={scores.wisdom??65}/>
           </div>
 
-          {/* ── 詳細 ── */}
-          {[
-            {icon:"🧬",label:"性格",content:result.personality},
-            {icon:"⚡",label:"最大の強み",content:result.strength},
-            {icon:"😅",label:"意外な弱点",content:result.weakness},
-            {icon:"💕",label:"恋愛傾向",content:result.love},
-            {icon:"🌟",label:"2025年の運勢",content:result.fortune2025},
-          ].map(({icon,label,content},i)=>(
+          {/* 詳細 */}
+          {[{icon:"🧬",label:"性格",content:result.personality},{icon:"⚡",label:"最大の強み",content:result.strength},{icon:"😅",label:"意外な弱点",content:result.weakness},{icon:"💕",label:"恋愛傾向",content:result.love},{icon:"🌟",label:"2025年の運勢",content:result.fortune2025}].map(({icon,label,content},i)=>(
             <div key={label} style={{...glassCard({marginBottom:10,animation:`fadeUp 0.5s ${0.13+i*0.06}s both ease`})}}>
-              <div style={{fontSize:9,color:"rgba(255,255,255,0.32)",marginBottom:5,display:"flex",gap:5,alignItems:"center",letterSpacing:2,textTransform:"uppercase"}}>
-                <span>{icon}</span><span>{label}</span>
-              </div>
+              <div style={{fontSize:9,color:"rgba(255,255,255,0.32)",marginBottom:5,display:"flex",gap:5,alignItems:"center",letterSpacing:2,textTransform:"uppercase"}}><span>{icon}</span><span>{label}</span></div>
               <p style={{margin:0,fontSize:13,lineHeight:1.78,color:"rgba(255,255,255,0.88)"}}>{content}</p>
             </div>
           ))}
 
-          {/* ── 相性◎ 3通り ── */}
+          {/* 相性◎ */}
           <div style={{animation:"fadeUp 0.5s 0.44s both ease",marginBottom:14}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
               <div style={{flex:1,height:1,background:"rgba(52,211,153,0.2)"}}/>
@@ -1076,13 +1071,11 @@ export default function ShindanApp() {
               <div style={{flex:1,height:1,background:"rgba(52,211,153,0.2)"}}/>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-              {(result.goodCompatibility||[]).slice(0,3).map((g,i)=>(
-                <CompatCard key={i} data={g} good={true} getTypes={getTypes}/>
-              ))}
+              {(result.goodCompatibility||[]).slice(0,3).map((g,i)=><CompatCard key={i} data={g} good={true} getTypes={getTypes}/>)}
             </div>
           </div>
 
-          {/* ── 相性× 3通り ── */}
+          {/* 相性× */}
           <div style={{animation:"fadeUp 0.5s 0.52s both ease",marginBottom:20}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
               <div style={{flex:1,height:1,background:"rgba(248,113,113,0.2)"}}/>
@@ -1090,171 +1083,55 @@ export default function ShindanApp() {
               <div style={{flex:1,height:1,background:"rgba(248,113,113,0.2)"}}/>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-              {(result.badCompatibility||[]).slice(0,3).map((b,i)=>(
-                <CompatCard key={i} data={b} good={false} getTypes={getTypes}/>
-              ))}
+              {(result.badCompatibility||[]).slice(0,3).map((b,i)=><CompatCard key={i} data={b} good={false} getTypes={getTypes}/>)}
             </div>
           </div>
 
-          {/* ── アクション ── */}
+          {/* アクション */}
           <div style={{display:"flex",flexDirection:"column",gap:11,animation:"fadeUp 0.5s 0.6s both ease"}}>
-
-            {/* ── 状態トースト ── */}
-            {shareState !== "idle" && shareState !== "capturing" && (
-              <div style={{
-                padding:"12px 16px", borderRadius:14, marginBottom:4,
-                background: shareState.startsWith("copied") ? "rgba(52,211,153,0.18)" : "rgba(139,92,246,0.18)",
-                border: `1px solid ${shareState.startsWith("copied") ? "rgba(52,211,153,0.5)" : "rgba(139,92,246,0.5)"}`,
-                color:"white", fontSize:13, textAlign:"center", lineHeight:1.6,
-                animation:"fadeUp 0.3s ease",
-              }}>
-                {shareState === "copied_x"   && "✅ 画像をコピーしました！\nXの投稿画面で Ctrl+V（またはペースト）で貼り付けてください"}
-                {shareState === "saved_x"    && "📥 画像を保存しました！\nXの投稿画面で画像を添付して投稿してください"}
-                {shareState === "copied_line"&& "✅ 画像をコピーしました！\nLINEのトーク画面で貼り付けて送ってください"}
-                {shareState === "saved_line" && "📥 画像を保存しました！\nLINEのノートや送信に添付してください"}
-                {shareState === "saved"      && "📥 画像を保存しました！"}
-              </div>
-            )}
-
-            {/* ── キャプチャ中スピナー ── */}
-            {shareState === "capturing" && (
+            {shareState==="capturing"&&(
               <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"14px",borderRadius:14,background:"rgba(139,92,246,0.12)",border:"1px solid rgba(139,92,246,0.3)"}}>
                 <div style={{width:18,height:18,borderRadius:"50%",border:"2px solid rgba(139,92,246,0.3)",borderTop:"2px solid #a855f7",animation:"spin 0.7s linear infinite",flexShrink:0}}/>
                 <span style={{fontSize:13,color:"rgba(255,255,255,0.75)"}}>画像を生成中…</span>
               </div>
             )}
-
-            {/* ── SNSシェアボタン ── */}
-            <button
-              onClick={openShareModal}
-              disabled={shareState==="capturing"}
-              style={{padding:"16px",borderRadius:50,fontSize:15,fontWeight:800,cursor:"pointer",border:"none",background:"linear-gradient(135deg,#a855f7,#ec4899)",color:"white",boxShadow:"0 0 26px rgba(168,85,247,0.4)",opacity:shareState==="capturing"?0.5:1,letterSpacing:1}}
-            >📣 結果をSNSでシェア</button>
-
+            <button onClick={openShareModal} disabled={shareState==="capturing"}
+              style={{padding:"16px",borderRadius:50,fontSize:15,fontWeight:800,cursor:"pointer",border:"none",background:"linear-gradient(135deg,#a855f7,#ec4899)",color:"white",boxShadow:"0 0 26px rgba(168,85,247,0.4)",opacity:shareState==="capturing"?0.5:1,letterSpacing:1}}>
+              📣 結果をSNSでシェア
+            </button>
             <button onClick={reset} style={{padding:"13px",borderRadius:50,fontSize:13,cursor:"pointer",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.11)",color:"rgba(255,255,255,0.8)"}}>🔄 もう一度診断する</button>
           </div>
 
-          {/* ── シェア用スナップショットカード（非表示、html2canvas用） ── */}
-          {result && (
-            <div id="share-snapshot-card" style={{
-              position:"fixed", left:"-9999px", top:0,
-              width:600, background:"linear-gradient(135deg,#0a0015 0%,#0d0025 50%,#080020 100%)",
-              padding:"40px 36px 48px", fontFamily:"'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif",
-              color:"white", zIndex:-1,
-            }}>
-              {/* ヘッダー */}
-              <div style={{textAlign:"center",marginBottom:24}}>
-                <div style={{fontSize:10,letterSpacing:5,color:"rgba(167,139,250,0.7)",marginBottom:10,textTransform:"uppercase"}}>Your Pokemon Type</div>
-                {/* ポケモンSVG */}
-                <div style={{display:"flex",justifyContent:"center",marginBottom:10}}>
-                  <div style={{width:120,height:120,borderRadius:"50%",background:`radial-gradient(circle,${TYPE_COLORS[getTypes(result.pokemonId)[0]]||"#9575CD"}33 0%,transparent 70%)`,border:`2px solid ${TYPE_COLORS[getTypes(result.pokemonId)[0]]||"#9575CD"}55`,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 0 32px ${TYPE_COLORS[getTypes(result.pokemonId)[0]]||"#9575CD"}44`}}>
-                    <PokeSprite id={result.pokemonId} size={96}/>
-                  </div>
-                </div>
-                {/* タイプバッジ */}
-                <div style={{display:"flex",gap:8,justifyContent:"center",marginBottom:10}}>
-                  {getTypes(result.pokemonId).map(t=>(
-                    <span key={t} style={{padding:"4px 14px",borderRadius:12,fontSize:12,fontWeight:800,background:`${TYPE_COLORS[t]||"#888"}44`,border:`1px solid ${TYPE_COLORS[t]||"#888"}88`,color:TYPE_COLORS[t]||"#ccc"}}>{TYPE_JP[t]||t}</span>
-                  ))}
-                </div>
-                <div style={{fontSize:32,fontWeight:900,marginBottom:8,background:`linear-gradient(90deg,${TYPE_COLORS[getTypes(result.pokemonId)[0]]||"#a855f7"},#e879f9)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>{result.pokemonName}タイプ</div>
-                <div style={{fontSize:14,color:"rgba(255,255,255,0.7)",fontStyle:"italic",padding:"6px 16px",background:"rgba(139,92,246,0.15)",borderRadius:20,display:"inline-block"}}>「{result.tagline}」</div>
-              </div>
-              {/* パラメーター */}
-              <div style={{background:"rgba(255,255,255,0.05)",borderRadius:16,padding:"16px 20px",marginBottom:16}}>
-                <div style={{fontSize:10,letterSpacing:3,color:"rgba(255,255,255,0.4)",marginBottom:12,textTransform:"uppercase"}}>パラメーター</div>
-                {[{l:"魅力",v:result.score?.charm??55,c:"#e879f9"},{l:"運勢",v:result.score?.luck??60,c:"#fbbf24"},{l:"行動力",v:result.score?.power??70,c:"#34d399"},{l:"愛情",v:result.score?.love??50,c:"#f87171"},{l:"知恵",v:result.score?.wisdom??65,c:"#60a5fa"}].map(({l,v,c})=>(
-                  <div key={l} style={{marginBottom:8}}>
-                    <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3,color:"rgba(255,255,255,0.8)"}}><span>{l}</span><span style={{color:c,fontWeight:700}}>{v}</span></div>
-                    <div style={{height:5,background:"rgba(255,255,255,0.08)",borderRadius:3}}><div style={{height:"100%",width:`${v}%`,background:`linear-gradient(90deg,${c}77,${c})`,borderRadius:3}}/></div>
-                  </div>
-                ))}
-              </div>
-              {/* 性格 */}
-              <div style={{background:"rgba(255,255,255,0.04)",borderRadius:14,padding:"14px 16px",marginBottom:12}}>
-                <div style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginBottom:6,letterSpacing:2}}>🧬 性格</div>
-                <p style={{margin:0,fontSize:13,lineHeight:1.7,color:"rgba(255,255,255,0.9)"}}>{result.personality}</p>
-              </div>
-              {/* フッター */}
-              <div style={{textAlign:"center",marginTop:20,fontSize:11,color:"rgba(255,255,255,0.3)",letterSpacing:1}}>
-                🎮 anata-shindan.vercel.app
-              </div>
-            </div>
-          )}
-
-          {/* ══ シェアモーダル ══ */}
-          {shareModal && (
-            <div onClick={()=>setShareModal(null)} style={{position:"fixed",inset:0,zIndex:1000,background:"rgba(0,0,0,0.88)",backdropFilter:"blur(8px)",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"0 0 0 0",overflowY:"auto"}}>
+          {/* シェアモーダル */}
+          {shareModal&&(
+            <div onClick={()=>setShareModal(null)} style={{position:"fixed",inset:0,zIndex:1000,background:"rgba(0,0,0,0.88)",backdropFilter:"blur(8px)",display:"flex",alignItems:"flex-end",justifyContent:"center",overflowY:"auto"}}>
               <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:520,background:"linear-gradient(135deg,#16003a,#0a0020)",border:"1px solid rgba(139,92,246,0.35)",borderRadius:"24px 24px 0 0",padding:"24px 18px 36px",animation:"fadeUp 0.28s ease"}}>
-
-                {/* ヘッダー */}
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
                   <span style={{fontSize:15,fontWeight:800,color:"white"}}>📤 シェアする</span>
                   <button onClick={()=>setShareModal(null)} style={{background:"rgba(255,255,255,0.1)",border:"none",color:"white",width:30,height:30,borderRadius:"50%",cursor:"pointer",fontSize:14}}>✕</button>
                 </div>
-                {/* 画像アップロード状態 */}
-                <div style={{
-                  padding:"8px 12px",borderRadius:10,marginBottom:12,fontSize:11,
-                  background: shareModal?.publicUrl ? "rgba(52,211,153,0.15)" : "rgba(251,191,36,0.15)",
-                  border: `1px solid ${shareModal?.publicUrl ? "rgba(52,211,153,0.4)" : "rgba(251,191,36,0.4)"}`,
-                  color: shareModal?.publicUrl ? "#34d399" : "#fbbf24",
-                  textAlign:"center",
-                }}>
-                  {shareModal?.publicUrl
-                    ? "✅ 画像のアップロード成功！Xに投稿するとカード画像が表示されます"
-                    : "⚠️ 画像のアップロード失敗。Xボタンを押すと画像がDLされるので手動で添付してください"}
+                <div style={{padding:"8px 12px",borderRadius:10,marginBottom:12,fontSize:11,background:shareModal.publicUrl?"rgba(52,211,153,0.15)":"rgba(251,191,36,0.15)",border:`1px solid ${shareModal.publicUrl?"rgba(52,211,153,0.4)":"rgba(251,191,36,0.4)"}`,color:shareModal.publicUrl?"#34d399":"#fbbf24",textAlign:"center"}}>
+                  {shareModal.publicUrl?"✅ 画像のアップロード成功！Xに投稿するとカード画像が表示されます":"⚠️ 画像DL済み。X投稿画面で添付してください"}
                 </div>
-
-                {/* プレビュー画像 */}
-                <div style={{borderRadius:16,overflow:"hidden",marginBottom:16,border:"1px solid rgba(255,255,255,0.1)",boxShadow:"0 4px 24px rgba(0,0,0,0.5)"}}>
+                <div style={{borderRadius:16,overflow:"hidden",marginBottom:14,border:"1px solid rgba(255,255,255,0.1)"}}>
                   <img src={shareModal.dataUrl} alt="preview" style={{width:"100%",display:"block"}}/>
                 </div>
-
-                {/* 投稿テキストプレビュー */}
-                <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:"12px 14px",marginBottom:18,fontSize:12,color:"rgba(255,255,255,0.7)",lineHeight:1.7,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
-                  {shareModal.text}
-                </div>
-
-                {/* X ボタン */}
-                <button
-                  onClick={postToX}
-                  style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,width:"100%",padding:"16px",borderRadius:16,fontSize:15,fontWeight:800,cursor:"pointer",border:"none",background:"#000",color:"white",marginBottom:10,transition:"background 0.15s"}}
-                  onMouseEnter={e=>e.currentTarget.style.background="#222"}
-                  onMouseLeave={e=>e.currentTarget.style.background="#000"}
-                >
+                <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:"12px 14px",marginBottom:16,fontSize:12,color:"rgba(255,255,255,0.7)",lineHeight:1.7,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{shareModal.text}</div>
+                <button onClick={postToX} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,width:"100%",padding:"16px",borderRadius:16,fontSize:15,fontWeight:800,cursor:"pointer",border:"none",background:"#000",color:"white",marginBottom:10,transition:"background 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="#222"} onMouseLeave={e=>e.currentTarget.style.background="#000"}>
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.74l7.73-8.835L1.254 2.25H8.08l4.259 5.63 5.905-5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
                   <span>Xに投稿する</span>
                 </button>
-
-                {/* LINE ボタン */}
-                <button
-                  onClick={postToLine}
-                  style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,width:"100%",padding:"16px",borderRadius:16,fontSize:15,fontWeight:800,cursor:"pointer",border:"none",background:"#06c755",color:"white",marginBottom:10,transition:"background 0.15s"}}
-                  onMouseEnter={e=>e.currentTarget.style.background="#08e060"}
-                  onMouseLeave={e=>e.currentTarget.style.background="#06c755"}
-                >
+                <button onClick={postToLine} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,width:"100%",padding:"16px",borderRadius:16,fontSize:15,fontWeight:800,cursor:"pointer",border:"none",background:"#06c755",color:"white",marginBottom:10,transition:"background 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="#08e060"} onMouseLeave={e=>e.currentTarget.style.background="#06c755"}>
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M24 10.304c0-5.369-5.383-9.738-12-9.738-6.616 0-12 4.369-12 9.738 0 4.814 4.269 8.846 10.036 9.608.391.084.922.258 1.057.592.121.303.079.778.039 1.085l-.171 1.027c-.053.303-.242 1.186 1.039.647 1.281-.54 6.911-4.069 9.428-6.967 1.739-1.907 2.572-3.843 2.572-5.992zm-18.988-1.49c0-.166.132-.301.296-.301h3.609c.166 0 .298.135.298.301v.667c0 .166-.132.301-.298.301h-2.61v.667h2.61c.166 0 .298.135.298.301v.667c0 .166-.132.301-.298.301h-2.61v.667h2.61c.166 0 .298.135.298.301v.667c0 .166-.132.301-.298.301h-3.609c-.164 0-.296-.135-.296-.301v-4.341zm5.604 4.341c0 .166-.132.301-.298.301h-.667c-.164 0-.296-.135-.296-.301v-4.341c0-.166.132-.301.296-.301h.667c.166 0 .298.135.298.301v4.341zm4.856 0c0 .166-.132.301-.298.301h-.667c-.089 0-.172-.044-.228-.116l-2.101-2.839v2.654c0 .166-.132.301-.298.301h-.667c-.164 0-.296-.135-.296-.301v-4.341c0-.166.132-.301.296-.301h.667c.089 0 .172.044.228.116l2.101 2.839v-2.654c0-.166.132-.301.298-.301h.667c.166 0 .298.135.298.301v4.341zm3.745-3.341c0 .166-.132.301-.298.301h-2.61v.667h2.61c.166 0 .298.135.298.301v.667c0 .166-.132.301-.298.301h-2.61v.667h2.61c.166 0 .298.135.298.301v.667c0 .166-.132.301-.298.301h-3.609c-.164 0-.296-.135-.296-.301v-4.341c0-.166.132-.301.296-.301h3.609c.166 0 .298.135.298.301v.667z"/></svg>
                   <span>LINEで送る</span>
                 </button>
-
-                {/* 画像保存 */}
-                <button
-                  onClick={async()=>{ const a=document.createElement("a"); a.href=shareModal.dataUrl; a.download="anata-shindan.png"; a.click(); setShareModal(null); }}
-                  style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,width:"100%",padding:"14px",borderRadius:16,fontSize:14,fontWeight:700,cursor:"pointer",background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.15)",color:"rgba(255,255,255,0.85)",transition:"background 0.15s"}}
-                  onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.12)"}
-                  onMouseLeave={e=>e.currentTarget.style.background="rgba(255,255,255,0.07)"}
-                >
+                <button onClick={saveImage} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,width:"100%",padding:"14px",borderRadius:16,fontSize:14,fontWeight:700,cursor:"pointer",background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.15)",color:"rgba(255,255,255,0.85)",marginBottom:16,transition:"background 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.12)"} onMouseLeave={e=>e.currentTarget.style.background="rgba(255,255,255,0.07)"}>
                   <span style={{fontSize:18}}>🖼️</span><span>画像だけ保存する</span>
                 </button>
-
-                {/* X用ガイド（PCのみ表示） */}
-                <p style={{textAlign:"center",fontSize:11,color:"rgba(255,255,255,0.3)",marginTop:14,lineHeight:1.6}}>
-                  ※PCでXに投稿する場合：画像が自動DLされます。<br/>X投稿画面で画像アイコンをクリックして添付してください。
-                </p>
+                <button onClick={()=>setShareModal(null)} style={{width:"100%",padding:"13px",borderRadius:14,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.5)",cursor:"pointer",fontSize:13}}>キャンセル</button>
               </div>
             </div>
           )}
-
         </div>
       </div>
     );
