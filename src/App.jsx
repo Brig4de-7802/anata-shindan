@@ -847,7 +847,7 @@ export default function ShindanApp() {
     setShareState("capturing");
     try {
       const { dataUrl, blob } = await captureCard();
-      const text = `🎮 私は「${result.pokemonName}タイプ」でした！\n「${result.tagline}」\n\n#ポケモン診断 #アナタ診断 #性格診断\nhttps://anata-shindan.vercel.app`;
+      const text = `🎮 私は「${result.pokemonName}タイプ」でした！\n「${result.tagline}」\n\n🔗 anata-shindan.vercel.app\n\n#ポケモン診断 #アナタ診断 #性格診断\nhttps://anata-shindan.vercel.app`;
       const base64 = dataUrl.split(",")[1];
       let publicUrl = null;
       try {
