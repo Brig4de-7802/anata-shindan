@@ -1,38 +1,41 @@
-// api/upload-image.js
+// api/upload-image.js — Cloudinary経由（TwitterのクローラーがブロックしないCDN）
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
   const { base64, pokemonName } = req.body || {};
   if (!base64) return res.status(400).json({ error: "no image" });
 
-  const apiKey = process.env.IMGBB_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: "IMGBB_API_KEY not set" });
+  const cloudName    = process.env.CLOUDINARY_CLOUD_NAME;
+  const uploadPreset = process.env.CLOUDINARY_UPLOAD_PRESET;
+
+  if (!cloudName || !uploadPreset) {
+    return res.status(500).json({ error: "Cloudinary env vars not set" });
+  }
 
   try {
-    const name = `shindan-${(pokemonName||"pokemon").replace(/[^\w]/g,"")}`;
-
-    const formData = new URLSearchParams();
-    formData.append("key", apiKey);
-    formData.append("image", base64);
-    formData.append("name", name);
-
-    const response = await fetch("https://api.imgbb.com/1/upload", {
-      method: "POST",
-      body: formData,
-    });
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          file: `data:image/png;base64,${base64}`,
+          upload_preset: uploadPreset,
+          public_id: `shindan-${Date.now()}`,
+          folder: "anata-shindan",
+        }),
+      }
+    );
 
     const data = await response.json();
-
-    if (!data.success) {
-      return res.status(500).json({ error: "imgBB upload failed", detail: data });
+    if (data.error) {
+      console.error("Cloudinary error:", data.error);
+      return res.status(500).json({ error: data.error.message });
     }
 
-    // imgBB APIのレスポンス構造:
-    // data.data.display_url = 直接画像URL (https://i.ibb.co/xxx/name.png) ← Xが読める
-    // data.data.url = HTMLビューアページ ← NGだった
-    const url = data.data.display_url;
-    console.log("Direct image URL:", url);
-    return res.status(200).json({ url });
+    // secure_url = https://res.cloudinary.com/... → Twitterが必ず読める
+    console.log("Cloudinary URL:", data.secure_url);
+    return res.status(200).json({ url: data.secure_url });
 
   } catch (err) {
     console.error("upload error:", err);
