@@ -866,8 +866,7 @@ export default function ShindanApp() {
   const postToX = () => {
     if (!shareModal) return;
     // テキスト＋URL＋ハッシュタグをまとめてtext=に入れる
-    const fullText = shareModal.text + "
-https://anata-shindan.vercel.app";
+    const fullText = shareModal.text + "\nhttps://anata-shindan.vercel.app";
     const encoded  = encodeURIComponent(fullText);
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     setShareModal(null);
