@@ -845,28 +845,35 @@ export default function ShindanApp() {
   const openShareModal = async () => {
     if (!result) return;
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    const tweetText = "🎮 私は「" + result.pokemonName + "タイプ」でした！\n" +
+    const shareText = "🎮 私は「" + result.pokemonName + "タイプ」でした！\n" +
       "「" + result.tagline + "」\n\n" +
       "#ポケモン診断 #アナタ診断 #性格診断\n" +
       "https://anata-shindan.vercel.app";
 
-    if (isMobile) {
-      // スマホ：html2canvas使わずXアプリ直接起動
-      const encoded = encodeURIComponent(tweetText);
-      window.location.href = "twitter://post?message=" + encoded;
-      setTimeout(() => {
-        window.open("https://twitter.com/intent/tweet?text=" + encoded, "_blank");
-      }, 1500);
-      return;
-    }
-
-    // PC：画像キャプチャ → モーダル表示
     setShareState("capturing");
     try {
       const { dataUrl, blob } = await captureCard();
-      const base64 = dataUrl.split(",")[1];
+
+      if (isMobile && navigator.share) {
+        // スマホ：Web Share APIで画像ファイルごと共有
+        const file = new File([blob], "anata-shindan.png", { type: "image/png" });
+        try {
+          await navigator.share({
+            text: shareText,
+            files: [file],
+          });
+          setShareState("idle");
+          return;
+        } catch(e) {
+          // キャンセルまたは非対応 → モーダル表示にフォールバック
+          console.log("share cancelled or not supported");
+        }
+      }
+
+      // PC or フォールバック：モーダル表示
       let publicUrl = null;
       try {
+        const base64 = dataUrl.split(",")[1];
         const res = await fetch("/api/upload-image", {
           method: "POST", headers: {"Content-Type":"application/json"},
           body: JSON.stringify({base64, pokemonName: result.pokemonName}),
@@ -874,7 +881,7 @@ export default function ShindanApp() {
         const data = await res.json();
         publicUrl = data.url || null;
       } catch(e) { console.warn("upload failed:", e); }
-      setShareModal({ dataUrl, blob, publicUrl, text: tweetText });
+      setShareModal({ dataUrl, blob, publicUrl, text: shareText });
     } catch(e) { console.error(e); }
     setShareState("idle");
   };
