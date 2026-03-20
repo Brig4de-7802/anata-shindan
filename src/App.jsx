@@ -802,92 +802,121 @@ ${summary}
   const reset = () => { setScreen("top");setCurrentQ(0);setAnswers([]);setResult(null);setResultVisible(false); };
   const goBack = () => { if(currentQ === 0){ reset(); } else { setCurrentQ(q => q-1); setAnswers(a => a.slice(0,-1)); } };
 
-  const resultCardRef = useRef(null);
-  const [showShareModal, setShowShareModal] = useState(false);
-  const [capturing, setCapturing] = useState(false);
+  const [shareState, setShareState] = useState("idle"); // idle | capturing | done
 
-  const getShareText = () => {
-    if(!result) return "";
-    const good = result.goodCompatibility?.map(g=>g.pokemonName).join("・")||"";
-    const bad  = result.badCompatibility?.map(b=>b.pokemonName).join("・")||"";
-    return `🎮 私は「${result.pokemonName}タイプ」でした！\n「${result.tagline}」\n\n💚 相性◎：${good}\n💔 相性×：${bad}\n\n#ポケモン診断 #アナタ診断 #性格診断`;
-  };
+  // ── html2canvas ロード（CDN） ──
+  const loadHtml2Canvas = () =>
+    new Promise((res, rej) => {
+      if (window.html2canvas) { res(window.html2canvas); return; }
+      const s = document.createElement("script");
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+      s.onload = () => res(window.html2canvas);
+      s.onerror = rej;
+      document.head.appendChild(s);
+    });
 
-  // 結果カードを画像として保存 & Web Share API
-  const captureAndShare = async (platform) => {
+  // ── 結果カードを画像化してBlobを返す ──
+  const captureCard = async () => {
     const card = document.getElementById("result-share-card");
-    if (!card) { fallbackShare(platform); return; }
+    if (!card) throw new Error("card not found");
+    const h2c = await loadHtml2Canvas();
+    const canvas = await h2c(card, {
+      backgroundColor: "#0b001e",
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      logging: false,
+      width: card.offsetWidth,
+      height: card.offsetHeight,
+    });
+    return new Promise((res) => canvas.toBlob(res, "image/png"));
+  };
+
+  // ── X（Twitter）でシェア ──
+  const shareToX = async () => {
+    setShareState("capturing");
+    const text = encodeURIComponent(
+      `🎮 私は「${result.pokemonName}タイプ」でした！\n「${result.tagline}」\n\n#ポケモン診断 #アナタ診断\nhttps://anata-shindan.vercel.app`
+    );
     try {
-      // html2canvas動的ロード
-      if (!window.html2canvas) {
-        await new Promise((res, rej) => {
-          const s = document.createElement("script");
-          s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
-          s.onload = res; s.onerror = rej;
-          document.head.appendChild(s);
+      const blob = await captureCard();
+      const file = new File([blob], "shindan.png", { type: "image/png" });
+      // スマホ：Web Share API で画像ごと共有
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({
+          text: decodeURIComponent(text),
+          files: [file],
         });
+        setShareState("idle");
+        return;
       }
-      const canvas = await window.html2canvas(card, {
-        backgroundColor: "#0b001e",
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-      });
-      canvas.toBlob(async (blob) => {
-        if (!blob) { fallbackShare(platform); return; }
-        const file = new File([blob], "anata-shindan.png", { type: "image/png" });
-        // Web Share API（モバイル対応）
-        if (navigator.share && navigator.canShare({ files: [file] })) {
-          await navigator.share({
-            title: `私は${result.pokemonName}タイプでした！`,
-            text: getShareText(),
-            files: [file],
-          });
-          setShowShareModal(false);
-          return;
-        }
-        // PCの場合：画像ダウンロード後にブラウザでシェア
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = "anata-shindan.png"; a.click();
-        URL.revokeObjectURL(url);
-        setTimeout(() => fallbackShare(platform), 500);
-      }, "image/png");
-    } catch(e) {
+      // PC：画像ダウンロード → X投稿画面を開く
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "anata-shindan.png";
+      a.click();
+      URL.revokeObjectURL(a.href);
+      setTimeout(() => {
+        window.open(`https://twitter.com/intent/tweet?text=${text}`, "_blank");
+      }, 600);
+    } catch (e) {
       console.error(e);
-      fallbackShare(platform);
+      window.open(`https://twitter.com/intent/tweet?text=${text}`, "_blank");
     }
+    setShareState("idle");
   };
 
-  const fallbackShare = (platform) => {
-    const text = encodeURIComponent(getShareText());
-    const siteUrl = encodeURIComponent("https://anata-shindan.vercel.app");
-    if (platform === "x") {
-      window.open(`https://twitter.com/intent/tweet?text=${text}&url=${siteUrl}`, "_blank");
-    } else {
-      window.open(`https://social-plugins.line.me/lineit/share?url=${siteUrl}&text=${text}`, "_blank");
-    }
-    setShowShareModal(false);
-  };
-
-  const shareToX = () => captureAndShare("x");
-
-  const shareToLine = () => captureAndShare("line");
-
-  const copyText = async () => {
+  // ── LINE でシェア ──
+  const shareToLine = async () => {
+    setShareState("capturing");
+    const shareText = `🎮 私は「${result.pokemonName}タイプ」でした！\n「${result.tagline}」\n\n#ポケモン診断 #アナタ診断`;
     try {
-      await navigator.clipboard.writeText(getShareText() + "\nhttps://anata-shindan.vercel.app");
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2200);
-    } catch {}
-    setShowShareModal(false);
+      const blob = await captureCard();
+      const file = new File([blob], "shindan.png", { type: "image/png" });
+      // スマホ：Web Share API
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({
+          text: shareText + "\nhttps://anata-shindan.vercel.app",
+          files: [file],
+        });
+        setShareState("idle");
+        return;
+      }
+      // PC：画像ダウンロード → LINE シェア画面
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "anata-shindan.png";
+      a.click();
+      URL.revokeObjectURL(a.href);
+      setTimeout(() => {
+        const url = encodeURIComponent("https://anata-shindan.vercel.app");
+        const txt = encodeURIComponent(shareText);
+        window.open(`https://social-plugins.line.me/lineit/share?url=${url}&text=${txt}`, "_blank");
+      }, 600);
+    } catch (e) {
+      console.error(e);
+      const url = encodeURIComponent("https://anata-shindan.vercel.app");
+      window.open(`https://social-plugins.line.me/lineit/share?url=${url}`, "_blank");
+    }
+    setShareState("idle");
   };
 
-  const handleShare = () => {
-    if(!result) return;
-    setShowShareModal(true);
+  // ── 画像だけ保存 ──
+  const saveImage = async () => {
+    setShareState("capturing");
+    try {
+      const blob = await captureCard();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "anata-shindan.png";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) { console.error(e); }
+    setShareState("idle");
   };
+
+  const handleShare = () => {};  // unused but kept for safety
+
 
   const base = {
     minHeight:"100vh",
@@ -1104,99 +1133,83 @@ ${summary}
 
           {/* ── アクション ── */}
           <div style={{display:"flex",flexDirection:"column",gap:11,animation:"fadeUp 0.5s 0.6s both ease"}}>
-            <button onClick={handleShare} style={{padding:"15px",borderRadius:50,fontSize:14,fontWeight:700,cursor:"pointer",border:"none",background:"linear-gradient(135deg,#a855f7,#ec4899)",color:"white",boxShadow:"0 0 26px rgba(168,85,247,0.38)"}}>
-              "📣 結果をSNSでシェア"}
+
+            {/* ── キャプチャ中オーバーレイ ── */}
+            {shareState === "capturing" && (
+              <div style={{
+                position:"fixed",inset:0,zIndex:2000,
+                background:"rgba(0,0,0,0.82)",backdropFilter:"blur(8px)",
+                display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,
+              }}>
+                <div style={{width:52,height:52,borderRadius:"50%",border:"3px solid rgba(139,92,246,0.2)",borderTop:"3px solid #a855f7",animation:"spin 0.8s linear infinite"}}/>
+                <p style={{color:"rgba(255,255,255,0.8)",fontSize:14,fontWeight:600}}>画像を生成中…</p>
+              </div>
+            )}
+
+            {/* X（Twitter）シェア */}
+            <button
+              onClick={shareToX}
+              disabled={shareState==="capturing"}
+              style={{
+                display:"flex",alignItems:"center",justifyContent:"center",gap:10,
+                padding:"15px",borderRadius:50,fontSize:14,fontWeight:700,cursor:"pointer",border:"none",
+                background:"linear-gradient(135deg,#000,#1a1a2e)",
+                border:"1px solid rgba(255,255,255,0.25)",
+                color:"white",boxShadow:"0 0 20px rgba(0,0,0,0.5)",
+                opacity:shareState==="capturing"?0.5:1,
+                transition:"all 0.18s",
+              }}
+              onMouseEnter={e=>{ if(shareState!=="capturing"){e.currentTarget.style.borderColor="rgba(255,255,255,0.6)";e.currentTarget.style.background="linear-gradient(135deg,#111,#1e1e3f)"; }}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.25)";e.currentTarget.style.background="linear-gradient(135deg,#000,#1a1a2e)";}}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
+                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.74l7.73-8.835L1.254 2.25H8.08l4.259 5.63 5.905-5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+              </svg>
+              <span>Xに画像を投稿する</span>
             </button>
 
-          {/* ── SNSシェアモーダル ── */}
-          {showShareModal && (
-            <div
-              onClick={()=>setShowShareModal(false)}
+            {/* LINE シェア */}
+            <button
+              onClick={shareToLine}
+              disabled={shareState==="capturing"}
               style={{
-                position:"fixed",inset:0,zIndex:1000,
-                background:"rgba(0,0,0,0.75)",backdropFilter:"blur(6px)",
-                display:"flex",alignItems:"flex-end",justifyContent:"center",
-                padding:"0 16px 32px",
+                display:"flex",alignItems:"center",justifyContent:"center",gap:10,
+                padding:"15px",borderRadius:50,fontSize:14,fontWeight:700,cursor:"pointer",border:"none",
+                background:"linear-gradient(135deg,#00b300,#00c900)",
+                color:"white",boxShadow:"0 0 20px rgba(0,185,0,0.3)",
+                opacity:shareState==="capturing"?0.5:1,
+                transition:"all 0.18s",
               }}
+              onMouseEnter={e=>{ if(shareState!=="capturing") e.currentTarget.style.background="linear-gradient(135deg,#00c900,#00e000)"; }}
+              onMouseLeave={e=>{ e.currentTarget.style.background="linear-gradient(135deg,#00b300,#00c900)"; }}
             >
-              <div
-                onClick={e=>e.stopPropagation()}
-                style={{
-                  width:"100%",maxWidth:480,
-                  background:"linear-gradient(135deg,#1a0030,#0d001e)",
-                  border:"1px solid rgba(139,92,246,0.35)",
-                  borderRadius:24,padding:"24px 20px",
-                  animation:"fadeUp 0.25s ease",
-                }}
-              >
-                <div style={{fontSize:13,color:"rgba(255,255,255,0.5)",textAlign:"center",marginBottom:20,letterSpacing:2}}>シェア先を選択</div>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
+                <path d="M24 10.304c0-5.369-5.383-9.738-12-9.738-6.616 0-12 4.369-12 9.738 0 4.814 4.269 8.846 10.036 9.608.391.084.922.258 1.057.592.121.303.079.778.039 1.085l-.171 1.027c-.053.303-.242 1.186 1.039.647 1.281-.54 6.911-4.069 9.428-6.967 1.739-1.907 2.572-3.843 2.572-5.992zm-18.988-1.49c0-.166.132-.301.296-.301h3.609c.166 0 .298.135.298.301v.667c0 .166-.132.301-.298.301h-2.61v.667h2.61c.166 0 .298.135.298.301v.667c0 .166-.132.301-.298.301h-2.61v.667h2.61c.166 0 .298.135.298.301v.667c0 .166-.132.301-.298.301h-3.609c-.164 0-.296-.135-.296-.301v-4.341zm5.604 4.341c0 .166-.132.301-.298.301h-.667c-.164 0-.296-.135-.296-.301v-4.341c0-.166.132-.301.296-.301h.667c.166 0 .298.135.298.301v4.341zm4.856 0c0 .166-.132.301-.298.301h-.667c-.089 0-.172-.044-.228-.116l-2.101-2.839v2.654c0 .166-.132.301-.298.301h-.667c-.164 0-.296-.135-.296-.301v-4.341c0-.166.132-.301.296-.301h.667c.089 0 .172.044.228.116l2.101 2.839v-2.654c0-.166.132-.301.298-.301h.667c.166 0 .298.135.298.301v4.341zm3.745-3.341c0 .166-.132.301-.298.301h-2.61v.667h2.61c.166 0 .298.135.298.301v.667c0 .166-.132.301-.298.301h-2.61v.667h2.61c.166 0 .298.135.298.301v.667c0 .166-.132.301-.298.301h-3.609c-.164 0-.296-.135-.296-.301v-4.341c0-.166.132-.301.296-.301h3.609c.166 0 .298.135.298.301v.667z"/>
+              </svg>
+              <span>LINEに画像を送る</span>
+            </button>
 
-                {/* X (Twitter) */}
-                <button
-                  onClick={shareToX}
-                  style={{
-                    display:"flex",alignItems:"center",gap:14,
-                    width:"100%",padding:"16px 20px",borderRadius:16,
-                    background:"rgba(0,0,0,0.6)",border:"1px solid rgba(255,255,255,0.15)",
-                    color:"white",cursor:"pointer",marginBottom:12,
-                    fontSize:15,fontWeight:700,transition:"all 0.18s",
-                  }}
-                  onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.12)";e.currentTarget.style.borderColor="rgba(255,255,255,0.4)";}}
-                  onMouseLeave={e=>{e.currentTarget.style.background="rgba(0,0,0,0.6)";e.currentTarget.style.borderColor="rgba(255,255,255,0.15)";}}
-                >
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="white">
-                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.74l7.73-8.835L1.254 2.25H8.08l4.259 5.63 5.905-5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
-                  </svg>
-                  <span>X（Twitter）に投稿する</span>
-                </button>
+            {/* 画像を保存 */}
+            <button
+              onClick={saveImage}
+              disabled={shareState==="capturing"}
+              style={{
+                display:"flex",alignItems:"center",justifyContent:"center",gap:10,
+                padding:"14px",borderRadius:50,fontSize:13,fontWeight:600,cursor:"pointer",
+                background:"rgba(139,92,246,0.15)",
+                border:"1px solid rgba(139,92,246,0.4)",
+                color:"rgba(255,255,255,0.85)",
+                opacity:shareState==="capturing"?0.5:1,
+                transition:"all 0.18s",
+              }}
+              onMouseEnter={e=>{ if(shareState!=="capturing"){e.currentTarget.style.background="rgba(139,92,246,0.28)";e.currentTarget.style.borderColor="rgba(139,92,246,0.7)"; }}}
+              onMouseLeave={e=>{e.currentTarget.style.background="rgba(139,92,246,0.15)";e.currentTarget.style.borderColor="rgba(139,92,246,0.4)";}}
+            >
+              <span style={{fontSize:16}}>🖼️</span>
+              <span>画像として保存する</span>
+            </button>
 
-                {/* LINE */}
-                <button
-                  onClick={shareToLine}
-                  style={{
-                    display:"flex",alignItems:"center",gap:14,
-                    width:"100%",padding:"16px 20px",borderRadius:16,
-                    background:"rgba(0,185,0,0.15)",border:"1px solid rgba(0,185,0,0.35)",
-                    color:"white",cursor:"pointer",marginBottom:12,
-                    fontSize:15,fontWeight:700,transition:"all 0.18s",
-                  }}
-                  onMouseEnter={e=>{e.currentTarget.style.background="rgba(0,185,0,0.28)";e.currentTarget.style.borderColor="rgba(0,185,0,0.6)";}}
-                  onMouseLeave={e=>{e.currentTarget.style.background="rgba(0,185,0,0.15)";e.currentTarget.style.borderColor="rgba(0,185,0,0.35)";}}
-                >
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="#00B900">
-                    <path d="M24 10.304c0-5.369-5.383-9.738-12-9.738-6.616 0-12 4.369-12 9.738 0 4.814 4.269 8.846 10.036 9.608.391.084.922.258 1.057.592.121.303.079.778.039 1.085l-.171 1.027c-.053.303-.242 1.186 1.039.647 1.281-.54 6.911-4.069 9.428-6.967 1.739-1.907 2.572-3.843 2.572-5.992zm-18.988-1.49c0-.166.132-.301.296-.301h3.609c.166 0 .298.135.298.301v.667c0 .166-.132.301-.298.301h-2.61v.667h2.61c.166 0 .298.135.298.301v.667c0 .166-.132.301-.298.301h-2.61v.667h2.61c.166 0 .298.135.298.301v.667c0 .166-.132.301-.298.301h-3.609c-.164 0-.296-.135-.296-.301v-4.341zm5.604 4.341c0 .166-.132.301-.298.301h-.667c-.164 0-.296-.135-.296-.301v-4.341c0-.166.132-.301.296-.301h.667c.166 0 .298.135.298.301v4.341zm4.856 0c0 .166-.132.301-.298.301h-.667c-.089 0-.172-.044-.228-.116l-2.101-2.839v2.654c0 .166-.132.301-.298.301h-.667c-.164 0-.296-.135-.296-.301v-4.341c0-.166.132-.301.296-.301h.667c.089 0 .172.044.228.116l2.101 2.839v-2.654c0-.166.132-.301.298-.301h.667c.166 0 .298.135.298.301v4.341zm3.745-3.341c0 .166-.132.301-.298.301h-2.61v.667h2.61c.166 0 .298.135.298.301v.667c0 .166-.132.301-.298.301h-2.61v.667h2.61c.166 0 .298.135.298.301v.667c0 .166-.132.301-.298.301h-3.609c-.164 0-.296-.135-.296-.301v-4.341c0-.166.132-.301.296-.301h3.609c.166 0 .298.135.298.301v.667z"/>
-                  </svg>
-                  <span>LINEで送る</span>
-                </button>
-
-                {/* テキストコピー */}
-                <button
-                  onClick={copyText}
-                  style={{
-                    display:"flex",alignItems:"center",gap:14,
-                    width:"100%",padding:"16px 20px",borderRadius:16,
-                    background:"rgba(139,92,246,0.15)",border:"1px solid rgba(139,92,246,0.3)",
-                    color:"white",cursor:"pointer",marginBottom:20,
-                    fontSize:15,fontWeight:700,transition:"all 0.18s",
-                  }}
-                  onMouseEnter={e=>{e.currentTarget.style.background="rgba(139,92,246,0.28)";e.currentTarget.style.borderColor="rgba(139,92,246,0.6)";}}
-                  onMouseLeave={e=>{e.currentTarget.style.background="rgba(139,92,246,0.15)";e.currentTarget.style.borderColor="rgba(139,92,246,0.3)";}}
-                >
-                  <span style={{fontSize:20}}>📋</span>
-                  <span>{copied ? "✅ コピーしました！" : "テキストをコピー"}</span>
-                </button>
-
-                <button
-                  onClick={()=>setShowShareModal(false)}
-                  style={{
-                    width:"100%",padding:"13px",borderRadius:14,
-                    background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",
-                    color:"rgba(255,255,255,0.5)",cursor:"pointer",fontSize:13,
-                  }}
-                >キャンセル</button>
-              </div>
-            </div>
-          )}
+            {/* もう一度診断 */}
             <button onClick={reset} style={{padding:"13px",borderRadius:50,fontSize:13,cursor:"pointer",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.11)",color:"rgba(255,255,255,0.8)"}}>🔄 もう一度診断する</button>
           </div>
 
