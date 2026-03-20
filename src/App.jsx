@@ -844,13 +844,26 @@ export default function ShindanApp() {
 
   const openShareModal = async () => {
     if (!result) return;
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    const tweetText = "🎮 私は「" + result.pokemonName + "タイプ」でした！\n" +
+      "「" + result.tagline + "」\n\n" +
+      "#ポケモン診断 #アナタ診断 #性格診断\n" +
+      "https://anata-shindan.vercel.app";
+
+    if (isMobile) {
+      // スマホ：html2canvas使わずXアプリ直接起動
+      const encoded = encodeURIComponent(tweetText);
+      window.location.href = "twitter://post?message=" + encoded;
+      setTimeout(() => {
+        window.open("https://twitter.com/intent/tweet?text=" + encoded, "_blank");
+      }, 1500);
+      return;
+    }
+
+    // PC：画像キャプチャ → モーダル表示
     setShareState("capturing");
     try {
       const { dataUrl, blob } = await captureCard();
-      const textMobile = "🎮 私は「" + result.pokemonName + "タイプ」でした！\n「" + result.tagline + "」\n\n#ポケモン診断 #アナタ診断 #性格診断\n\n📎 ここに画像を貼り付けてください";
-      const textPC = "🎮 私は「" + result.pokemonName + "タイプ」でした！\n「" + result.tagline + "」\n\n#ポケモン診断 #アナタ診断 #性格診断\nhttps://anata-shindan.vercel.app";
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      const text = isMobile ? textMobile : textPC;
       const base64 = dataUrl.split(",")[1];
       let publicUrl = null;
       try {
@@ -861,9 +874,10 @@ export default function ShindanApp() {
         const data = await res.json();
         publicUrl = data.url || null;
       } catch(e) { console.warn("upload failed:", e); }
-      setShareModal({ dataUrl, blob, publicUrl, text });
+      setShareModal({ dataUrl, blob, publicUrl, text: tweetText });
     } catch(e) { console.error(e); }
     setShareState("idle");
+  };
   };
 
   const postToX = () => {
