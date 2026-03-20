@@ -865,33 +865,26 @@ export default function ShindanApp() {
 
   const postToX = async () => {
     if (!shareModal) return;
-    const ogpUrl = shareModal.publicUrl
-      ? `https://anata-shindan.vercel.app/api/ogp?img=${encodeURIComponent(shareModal.publicUrl)}&name=${encodeURIComponent(result.pokemonName)}&tag=${encodeURIComponent(result.tagline)}`
-      : "https://anata-shindan.vercel.app";
-    let shortUrl = ogpUrl;
-    try {
-      const r = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(ogpUrl)}`);
-      const t = await r.text();
-      if (t.startsWith("https://tinyurl.com/")) shortUrl = t.trim();
-    } catch(e) {}
     const tweetText = encodeURIComponent(shareModal.text);
-    const tweetUrl  = encodeURIComponent(shortUrl);
-    // スマホはtwitterアプリに直接飛ぶ、PCはブラウザで開く
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    const tweetUrl  = encodeURIComponent("https://anata-shindan.vercel.app");
+    const isMobile  = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    setShareModal(null);
     if (isMobile) {
-      // X アプリのURLスキームで直接投稿画面を開く
-      window.location.href = `twitter://post?message=${tweetText}`;
-      // アプリが入っていない場合のフォールバック
+      // スマホ：Xアプリに直接飛ぶ（画像DLなし）
+      window.location.href = `twitter://post?message=${tweetText}%20${tweetUrl}`;
       setTimeout(() => {
         window.open(`https://twitter.com/intent/post?text=${tweetText}&url=${tweetUrl}`, "_blank");
-      }, 1000);
+      }, 1500);
     } else {
-      window.open(`https://twitter.com/intent/post?text=${tweetText}&url=${tweetUrl}`, "_blank");
+      // PC：画像DL + ブラウザでX投稿画面
+      const a = document.createElement("a");
+      a.href = shareModal.dataUrl; a.download = "anata-shindan.png"; a.click();
+      setTimeout(() => {
+        window.open(`https://twitter.com/intent/post?text=${tweetText}&url=${tweetUrl}`, "_blank");
+      }, 600);
     }
-    const a = document.createElement("a");
-    a.href = shareModal.dataUrl; a.download = "anata-shindan.png"; a.click();
-    setShareModal(null);
   };
+;
 
   const postToLine = () => {
     if (!shareModal) return;
