@@ -754,7 +754,7 @@ export default function ShindanApp() {
       '  "strength": "最大の強み（50文字）",',
       '  "weakness": "意外な弱点（50文字）",',
       '  "love": "恋愛傾向（60文字）",',
-      '  "fortune2025": "2025年の運勢（60文字）",',
+      '  "fortune2026": "2026年の運勢（60文字）",',
       '  "goodCompatibility": [',
       '    {"pokemonId": 任意のID, "pokemonName": "名前", "reason": "相性が良い理由（30文字）"},',
       '    {"pokemonId": 任意のID, "pokemonName": "名前", "reason": "相性が良い理由（30文字）"},',
@@ -795,7 +795,7 @@ export default function ShindanApp() {
         strength: "独自の発想と柔軟な行動力",
         weakness: "頑固になりすぎることも",
         love: "一途だが素直になれない",
-        fortune2025: "新しい出会いが運を開く年",
+        fortune2026: "新しい出会いが運を開く年",
         goodCompatibility: [
           {pokemonId:133, pokemonName:"イーブイ",   reason:"多様性を認め合える"},
           {pokemonId:35,  pokemonName:"ピッピ",     reason:"癒しで補い合える"},
@@ -876,7 +876,18 @@ export default function ShindanApp() {
     } catch(e) {}
     const tweetText = encodeURIComponent(shareModal.text);
     const tweetUrl  = encodeURIComponent(shortUrl);
-    window.open(`https://twitter.com/intent/post?text=${tweetText}&url=${tweetUrl}`, "_blank");
+    // スマホはtwitterアプリに直接飛ぶ、PCはブラウザで開く
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (isMobile) {
+      // X アプリのURLスキームで直接投稿画面を開く
+      window.location.href = `twitter://post?message=${tweetText}`;
+      // アプリが入っていない場合のフォールバック
+      setTimeout(() => {
+        window.open(`https://twitter.com/intent/post?text=${tweetText}&url=${tweetUrl}`, "_blank");
+      }, 1000);
+    } else {
+      window.open(`https://twitter.com/intent/post?text=${tweetText}&url=${tweetUrl}`, "_blank");
+    }
     const a = document.createElement("a");
     a.href = shareModal.dataUrl; a.download = "anata-shindan.png"; a.click();
     setShareModal(null);
@@ -959,7 +970,7 @@ export default function ShindanApp() {
               ))}
             </div>
           </div>
-          <div style={{paddingTop:14}}>
+          <div style={{paddingTop:6}}>
             <button onClick={goBack} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",padding:"13px 20px",borderRadius:14,cursor:"pointer",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.18)",color:"rgba(255,255,255,0.75)",fontSize:14,fontWeight:600,transition:"all 0.18s"}}
               onMouseEnter={e=>{e.currentTarget.style.background="rgba(168,85,247,0.2)";e.currentTarget.style.borderColor="rgba(168,85,247,0.6)";e.currentTarget.style.color="white";}}
               onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";e.currentTarget.style.borderColor="rgba(255,255,255,0.18)";e.currentTarget.style.color="rgba(255,255,255,0.75)";}}>
@@ -1056,7 +1067,7 @@ export default function ShindanApp() {
           </div>
 
           {/* 詳細 */}
-          {[{icon:"🧬",label:"性格",content:result.personality},{icon:"⚡",label:"最大の強み",content:result.strength},{icon:"😅",label:"意外な弱点",content:result.weakness},{icon:"💕",label:"恋愛傾向",content:result.love},{icon:"🌟",label:"2025年の運勢",content:result.fortune2025}].map(({icon,label,content},i)=>(
+          {[{icon:"🧬",label:"性格",content:result.personality},{icon:"⚡",label:"最大の強み",content:result.strength},{icon:"😅",label:"意外な弱点",content:result.weakness},{icon:"💕",label:"恋愛傾向",content:result.love},{icon:"🌟",label:"2026年の運勢",content:result.fortune2026}].map(({icon,label,content},i)=>(
             <div key={label} style={{...glassCard({marginBottom:10,animation:`fadeUp 0.5s ${0.13+i*0.06}s both ease`})}}>
               <div style={{fontSize:9,color:"rgba(255,255,255,0.32)",marginBottom:5,display:"flex",gap:5,alignItems:"center",letterSpacing:2,textTransform:"uppercase"}}><span>{icon}</span><span>{label}</span></div>
               <p style={{margin:0,fontSize:13,lineHeight:1.78,color:"rgba(255,255,255,0.88)"}}>{content}</p>
