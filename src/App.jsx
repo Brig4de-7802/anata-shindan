@@ -863,24 +863,26 @@ export default function ShindanApp() {
     setShareState("idle");
   };
 
-  const postToX = async () => {
+  const postToX = () => {
     if (!shareModal) return;
-    const tweetText = encodeURIComponent(shareModal.text);
-    const tweetUrl  = encodeURIComponent("https://anata-shindan.vercel.app");
-    const isMobile  = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    // テキスト＋URL＋ハッシュタグをまとめてtext=に入れる
+    const fullText = shareModal.text + "
+https://anata-shindan.vercel.app";
+    const encoded  = encodeURIComponent(fullText);
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     setShareModal(null);
     if (isMobile) {
-      // スマホ：Xアプリに直接飛ぶ（画像DLなし）
-      window.location.href = `twitter://post?message=${tweetText}%20${tweetUrl}`;
+      // スマホ：Xアプリ直接起動
+      window.location.href = `twitter://post?message=${encoded}`;
       setTimeout(() => {
-        window.open(`https://twitter.com/intent/post?text=${tweetText}&url=${tweetUrl}`, "_blank");
+        window.open(`https://twitter.com/intent/tweet?text=${encoded}`, "_blank");
       }, 1500);
     } else {
-      // PC：画像DL + ブラウザでX投稿画面
+      // PC：画像DL＋ブラウザでX投稿画面
       const a = document.createElement("a");
       a.href = shareModal.dataUrl; a.download = "anata-shindan.png"; a.click();
       setTimeout(() => {
-        window.open(`https://twitter.com/intent/post?text=${tweetText}&url=${tweetUrl}`, "_blank");
+        window.open(`https://twitter.com/intent/tweet?text=${encoded}`, "_blank");
       }, 600);
     }
   };
