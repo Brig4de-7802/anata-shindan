@@ -847,7 +847,10 @@ export default function ShindanApp() {
     setShareState("capturing");
     try {
       const { dataUrl, blob } = await captureCard();
-      const text = "🎮 私は「" + result.pokemonName + "タイプ」でした！\n「" + result.tagline + "」\n\n#ポケモン診断 #アナタ診断 #性格診断\nhttps://anata-shindan.vercel.app\n\n📎 ここに画像を貼り付けてください";
+      const textMobile = "🎮 私は「" + result.pokemonName + "タイプ」でした！\n「" + result.tagline + "」\n\n#ポケモン診断 #アナタ診断 #性格診断\n\n📎 ここに画像を貼り付けてください";
+      const textPC = "🎮 私は「" + result.pokemonName + "タイプ」でした！\n「" + result.tagline + "」\n\n#ポケモン診断 #アナタ診断 #性格診断\nhttps://anata-shindan.vercel.app";
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      const text = isMobile ? textMobile : textPC;
       const base64 = dataUrl.split(",")[1];
       let publicUrl = null;
       try {
@@ -881,7 +884,6 @@ export default function ShindanApp() {
       }, 600);
     }
   };
-;
 
   const postToLine = () => {
     if (!shareModal) return;
