@@ -1,12 +1,10 @@
-// api/ogp.js — XのTwitterbotクローラー向けOGPページ
-// url.parse()を使わずWHATWG URL APIで実装
+// api/ogp.js
 export default function handler(req, res) {
-  // クエリパラメータを安全に取得
   const { img, name, tag } = req.query;
 
-  const imageUrl = img || null;
-  const pokeName = name || "ポケモン";
-  const tagline  = tag  || "あなたのポケモンタイプ診断";
+  const imageUrl = img && img.startsWith("http") ? decodeURIComponent(img) : null;
+  const pokeName = name ? decodeURIComponent(name) : "ポケモン";
+  const tagline  = tag  ? decodeURIComponent(tag)  : "あなたのポケモンタイプ診断";
 
   const title   = `私は「${pokeName}タイプ」でした！`;
   const desc    = `「${tagline}」 #ポケモン診断 #アナタ診断 #性格診断`;
@@ -36,7 +34,12 @@ export default function handler(req, res) {
   <meta name="twitter:title" content="${title}"/>
   <meta name="twitter:description" content="${desc}"/>
   <meta name="twitter:image" content="${imageUrl}"/>
+  <!-- 人間ユーザーはすぐにトップページへ -->
+  <meta http-equiv="refresh" content="0;url=${siteUrl}"/>
 </head>
-<body><a href="${siteUrl}">アナタ診断へ</a></body>
+<body>
+  <script>window.location.replace("${siteUrl}")</script>
+  <p>リダイレクト中... <a href="${siteUrl}">アナタ診断へ</a></p>
+</body>
 </html>`);
 }
