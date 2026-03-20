@@ -878,7 +878,6 @@ export default function ShindanApp() {
     } catch(e) { console.error(e); }
     setShareState("idle");
   };
-  };
 
   const postToX = () => {
     if (!shareModal) return;
