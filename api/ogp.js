@@ -1,23 +1,31 @@
 // api/ogp.js
 export default function handler(req, res) {
   const { img, name, tag } = req.query;
-
-  const imageUrl = img && img.startsWith("http") ? decodeURIComponent(img) : null;
+  const imageUrl = img || null;
   const pokeName = name ? decodeURIComponent(name) : "ポケモン";
   const tagline  = tag  ? decodeURIComponent(tag)  : "あなたのポケモンタイプ診断";
-
-  const title   = `私は「${pokeName}タイプ」でした！`;
-  const desc    = `「${tagline}」 #ポケモン診断 #アナタ診断 #性格診断`;
-  const siteUrl = "https://anata-shindan.vercel.app";
+  const title    = `私は「${pokeName}タイプ」でした！`;
+  const desc     = `「${tagline}」 #ポケモン診断 #アナタ診断`;
+  const siteUrl  = "https://anata-shindan.vercel.app";
 
   if (!imageUrl) {
     res.writeHead(302, { Location: siteUrl });
     return res.end();
   }
 
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.setHeader("Cache-Control", "public, max-age=3600");
+  // TwitterbotかどうかをUser-Agentで判定
+  const ua = req.headers["user-agent"] || "";
+  const isBot = ua.includes("Twitterbot") || ua.includes("Discordbot") || ua.includes("facebookexternalhit") || ua.includes("bot");
 
+  if (!isBot) {
+    // 人間のユーザー → サイトにリダイレクト
+    res.writeHead(302, { Location: siteUrl });
+    return res.end();
+  }
+
+  // Twitterクローラー → OGPタグだけ返す（リダイレクトなし）
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache");
   return res.status(200).send(`<!DOCTYPE html>
 <html>
 <head>
@@ -34,12 +42,7 @@ export default function handler(req, res) {
   <meta name="twitter:title" content="${title}"/>
   <meta name="twitter:description" content="${desc}"/>
   <meta name="twitter:image" content="${imageUrl}"/>
-  <!-- 人間ユーザーはすぐにトップページへ -->
-  <meta http-equiv="refresh" content="0;url=${siteUrl}"/>
 </head>
-<body>
-  <script>window.location.replace("${siteUrl}")</script>
-  <p>リダイレクト中... <a href="${siteUrl}">アナタ診断へ</a></p>
-</body>
+<body></body>
 </html>`);
 }
