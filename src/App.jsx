@@ -718,122 +718,88 @@ export default function ShindanApp() {
   };
 
   const fetchResult = async (ans) => {
+    // ── ステップ1：回答からポケモンIDを決定論的に計算 ──
+    // AIに選ばせず、回答の数値化でIDを決める → ゲンガー連発を完全排除
+    const BANNED = new Set([6, 25, 94, 149, 150, 151]); // リザードン/ピカ/ゲンガー/カイリュー/ミュウツー/ミュウ
+    const weights = {A:3, B:7, C:13, D:17};
+    let hash = 0;
+    ans.forEach((v, i) => { hash += (weights[v]||5) * (i+1) * (i+2); });
+    // 1〜148 の非BANリストからIDを選ぶ
+    const available = Array.from({length:148},(_,i)=>i+1).filter(id=>!BANNED.has(id));
+    const chosenId = available[hash % available.length];
+    const chosenPoke = POKEMON_151.find(p=>p.id===chosenId);
+    console.log(`Hash:${hash} → Pokemon:${chosenId} ${chosenPoke?.name}`);
+
+    // ── ステップ2：決定したポケモンの性格文・相性等をAIに生成させる ──
     const summary = QUESTIONS.map((q,i)=>{
       const c=q.options.find(o=>o.value===ans[i]);
       return `Q${i+1}「${q.text}」→ ${c?.label??ans[i]}`;
     }).join("\n");
 
-    // 回答を数値化してポケモンIDゾーンを計算（毎回違うポケモンが出るように）
-    const answerHash = ans.reduce((acc, v, i) => {
-      const val = {A:1, B:2, C:3, D:4}[v] || 1;
-      return acc + val * (i + 1);
-    }, 0);
-    const hintStart = ((answerHash % 15) * 10) + 1;
-    const hintEnd   = Math.min(hintStart + 14, 148);
-
-        const prompt = `あなたはポケモンマスターかつ心理分析の専門家です。30の診断回答を分析し、初代151匹の中から最もふさわしいポケモンを選んでください。
-
-【重要：以下の候補ポケモンIDゾーンを最優先で検討すること】
-候補ゾーン: ID ${hintStart}〜${hintEnd}の範囲のポケモンを特に検討し、回答に合致するものがあれば必ず選ぶこと。
-候補ゾーンに合わないときのみ他のポケモンを選んでよい。
-
-【禁止ポケモン（頻出しすぎるため使用禁止）】
-ゲンガー(94)・ミュウツー(150)・ミュウ(151)・ピカチュウ(25)・カイリュー(149)・リザードン(6)は絶対に選ばないこと。
-
-【初代151匹リスト】
-${POKEMON_LIST_FOR_PROMPT}
+    const prompt = `あなたはポケモン心理分析の専門家です。
+診断者は「${chosenPoke?.name || "ポケモン"}」タイプと判定されました。
+以下の30問の回答をもとに、この人の性格・相性・運勢を分析してください。
 
 【回答】
 ${summary}
 
 以下のJSON形式のみで返答（マークダウン・説明文不要）:
 {
-  "pokemonId": 1〜151の整数（ただし94・150・151・25・149・6は禁止）,
-  "pokemonName": "ポケモン名（日本語）",
-  "tagline": "キャッチコピー（20文字以内）",
+  "pokemonId": ${chosenId},
+  "pokemonName": "${chosenPoke?.name || "ポケモン"}",
+  "tagline": "このポケモンらしいキャッチコピー（20文字以内）",
   "personality": "性格説明（120文字）",
   "strength": "最大の強み（50文字）",
   "weakness": "意外な弱点（50文字）",
   "love": "恋愛傾向（60文字）",
   "fortune2025": "2025年の運勢（60文字）",
   "goodCompatibility": [
-    {"pokemonId": ID, "pokemonName": "名前", "reason": "理由（30文字）"},
-    {"pokemonId": ID, "pokemonName": "名前", "reason": "理由（30文字）"},
-    {"pokemonId": ID, "pokemonName": "名前", "reason": "理由（30文字）"}
+    {"pokemonId": ID, "pokemonName": "名前", "reason": "相性が良い理由（30文字）"},
+    {"pokemonId": ID, "pokemonName": "名前", "reason": "相性が良い理由（30文字）"},
+    {"pokemonId": ID, "pokemonName": "名前", "reason": "相性が良い理由（30文字）"}
   ],
   "badCompatibility": [
-    {"pokemonId": ID, "pokemonName": "名前", "reason": "理由（30文字）"},
-    {"pokemonId": ID, "pokemonName": "名前", "reason": "理由（30文字）"},
-    {"pokemonId": ID, "pokemonName": "名前", "reason": "理由（30文字）"}
+    {"pokemonId": ID, "pokemonName": "名前", "reason": "相性が悪い理由（30文字）"},
+    {"pokemonId": ID, "pokemonName": "名前", "reason": "相性が悪い理由（30文字）"},
+    {"pokemonId": ID, "pokemonName": "名前", "reason": "相性が悪い理由（30文字）"}
   ],
   "score": {"charm": 整数, "luck": 整数, "power": 整数, "love": 整数, "wisdom": 整数}
 }
-【scoreルール】最高値と最低値の差50以上必須。得意（85〜98）と苦手（10〜30）必ず1〜2項目。均一禁止。
-`;
+【scoreルール】最高値と最低値の差50以上。得意（85〜98）と苦手（10〜30）を必ず1〜2項目。均一禁止。`;
 
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages",{
+      const res = await fetch("/api/diagnose",{
         method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1200,messages:[{role:"user",content:prompt}]}),
+        body:JSON.stringify({prompt}),
       });
       const data = await res.json();
-      const text = data.content?.map(c=>c.text||"").join("")||"";
-      const clean = text.replace(/```json|```/g,"").trim();
-      setResult(JSON.parse(clean));
+      // pokemonId/pokemonNameはAIの返答に関わらず計算値で上書き
+      data.pokemonId   = chosenId;
+      data.pokemonName = chosenPoke?.name || data.pokemonName;
+      setResult(data);
     } catch {
       setResult({
-        pokemonId:94,pokemonName:"ゲンガー",
-        tagline:"影から世界を操る策士",
-        personality:"表面はユーモラスだが内側に深い計算がある。人の心を読む天才的な洞察力で、場の空気を自在にコントロールする。一度信じた相手には全力を尽くす。",
-        strength:"人の心を読む洞察力と、予測不能な行動力",
-        weakness:"疑い深くなりすぎて素直になれないことも",
-        love:"駆け引きが好きで、なかなか本音を見せないが一途",
-        fortune2025:"隠れた実力が表に出る年。チャンスは夜に訪れる",
+        pokemonId: chosenId,
+        pokemonName: chosenPoke?.name || "ポケモン",
+        tagline:"あなただけの特別なタイプ",
+        personality:"個性豊かで独自の魅力を持つ。周囲とは違う視点で世界を見る力がある。",
+        strength:"独自の発想と行動力",weakness:"頑固になりすぎることも",
+        love:"一途だが素直になれない",fortune2025:"新しい出会いが運を開く年",
         goodCompatibility:[
-          {pokemonId:65,pokemonName:"フーディン",reason:"同じ知性派で互いの深みを理解し合える"},
-          {pokemonId:121,pokemonName:"スターミー",reason:"謎めいた雰囲気が共鳴しコンビネーション抜群"},
-          {pokemonId:149,pokemonName:"カイリュー",reason:"強者への敬意が生む最高のパートナーシップ"},
+          {pokemonId:133,pokemonName:"イーブイ",reason:"多様性を認め合える"},
+          {pokemonId:35,pokemonName:"ピッピ",reason:"癒しで補い合える"},
+          {pokemonId:79,pokemonName:"ヤドン",reason:"マイペース同士で落ち着く"},
         ],
         badCompatibility:[
-          {pokemonId:143,pokemonName:"カビゴン",reason:"マイペースすぎて行動の足を引っ張り合う"},
-          {pokemonId:39,pokemonName:"プリン",reason:"無邪気さについていけずイライラしてしまう"},
-          {pokemonId:35,pokemonName:"ピッピ",reason:"純粋さが自分の複雑な内面と真逆すぎる"},
+          {pokemonId:57,pokemonName:"オコリザル",reason:"感情面でぶつかりやすい"},
+          {pokemonId:100,pokemonName:"ビリリダマ",reason:"予測不能で振り回される"},
+          {pokemonId:143,pokemonName:"カビゴン",reason:"行動力の差がストレスに"},
         ],
-        score:{charm:19,luck:55,power:91,love:38,wisdom:94},
+        score:{charm:72,luck:45,power:88,love:31,wisdom:79},
       });
     }
     setScreen("result");
     setTimeout(()=>setResultVisible(true),80);
-  };
-
-  const getTypes = (id) => { const p=POKEMON_151.find(p=>p.id===id); return p?p.types:["normal"]; };
-  const getMainColor = (types) => TYPE_COLORS[types?.[0]]||"#9575CD";
-  const reset = () => { setScreen("top");setCurrentQ(0);setAnswers([]);setResult(null);setResultVisible(false); };
-  const goBack = () => { if(currentQ === 0){ reset(); } else { setCurrentQ(q => q-1); setAnswers(a => a.slice(0,-1)); } };
-
-  const [shareState, setShareState] = useState("idle"); // idle | capturing | done
-
-  // ── html2canvas ロード ──
-  const loadH2C = () => new Promise((res, rej) => {
-    if (window.html2canvas) { res(window.html2canvas); return; }
-    const s = document.createElement("script");
-    s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
-    s.onload = () => res(window.html2canvas); s.onerror = rej;
-    document.head.appendChild(s);
-  });
-
-  // ── 結果カードをキャプチャ → base64 + blob ──
-  const captureCard = async () => {
-    const card = document.getElementById("result-share-card");
-    if (!card) throw new Error("card not found");
-    const h2c = await loadH2C();
-    const canvas = await h2c(card, {
-      backgroundColor: "#0b001e", scale: 2,
-      useCORS: true, allowTaint: true, logging: false,
-    });
-    const dataUrl = canvas.toDataURL("image/png");
-    const blob = await new Promise(res => canvas.toBlob(res, "image/png"));
-    return { dataUrl, blob };
   };
 
   const [shareModal, setShareModal] = useState(null);

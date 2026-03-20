@@ -1,14 +1,15 @@
-// api/ogp.js
-// XのTwitterbotクローラー専用 — リダイレクトなしでOGPタグだけを返す
+// api/ogp.js — XのTwitterbotクローラー向けOGPページ
+// url.parse()を使わずWHATWG URL APIで実装
 export default function handler(req, res) {
+  // クエリパラメータを安全に取得
   const { img, name, tag } = req.query;
 
-  const imageUrl = img && img.startsWith("http") ? decodeURIComponent(img) : null;
-  const pokeName = name ? decodeURIComponent(name) : "ポケモン";
-  const tagline  = tag  ? decodeURIComponent(tag)  : "あなたのポケモンタイプ診断";
+  const imageUrl = img || null;
+  const pokeName = name || "ポケモン";
+  const tagline  = tag  || "あなたのポケモンタイプ診断";
 
-  const title = `私は「${pokeName}タイプ」でした！`;
-  const desc  = `「${tagline}」\n#ポケモン診断 #アナタ診断 #性格診断`;
+  const title   = `私は「${pokeName}タイプ」でした！`;
+  const desc    = `「${tagline}」 #ポケモン診断 #アナタ診断 #性格診断`;
   const siteUrl = "https://anata-shindan.vercel.app";
 
   if (!imageUrl) {
@@ -16,12 +17,9 @@ export default function handler(req, res) {
     return res.end();
   }
 
-  // Cache-Controlを長めに（Xがキャッシュを使い回す）
   res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600");
+  res.setHeader("Cache-Control", "public, max-age=3600");
 
-  // ★リダイレクトを一切しない★ OGPタグだけを返す
-  // XのTwitterbotはこのページを読んでカード画像を取得する
   return res.status(200).send(`<!DOCTYPE html>
 <html>
 <head>
@@ -39,8 +37,6 @@ export default function handler(req, res) {
   <meta name="twitter:description" content="${desc}"/>
   <meta name="twitter:image" content="${imageUrl}"/>
 </head>
-<body>
-  <a href="${siteUrl}">アナタ診断 — あなたは何ポケモンタイプ？</a>
-</body>
+<body><a href="${siteUrl}">アナタ診断へ</a></body>
 </html>`);
 }
